@@ -1,0 +1,70 @@
+{
+  "_notice": "SYNTHETIC TEST DATA - structure follows the documented football-data.org v4 shape; identifiers, statistics, and names are invented. A null statistic is unavailable and a zero statistic is a measured zero.",
+  "area": {
+    "id": 2000,
+    "name": "Examplia",
+    "code": "EX",
+    "flag": null
+  },
+  "competition": {
+    "id": 9001,
+    "name": "Example League",
+    "code": "EL",
+    "type": "LEAGUE",
+    "emblem": null
+  },
+  "season": {
+    "id": 7001,
+    "startDate": "2026-08-01",
+    "endDate": "2027-05-31",
+    "currentMatchday": 12,
+    "winner": null
+  },
+  "id": 8001,
+  "utcDate": "2026-08-15T15:00:00Z",
+  "status": "FINISHED",
+  "matchday": 1,
+  "stage": "REGULAR_SEASON",
+  "group": null,
+  "lastUpdated": "2026-08-15T17:05:00Z",
+  "homeTeam": {
+    "id": 501,
+    "name": "Example Home FC",
+    "shortName": "Home",
+    "tla": "EXH",
+    "crest": null,
+    "statistics": {
+      "ball_possession": 55,
+      "shots": 12,
+      "shots_on_goal": null,
+      "fouls": 0
+    }
+  },
+  "awayTeam": {
+    "id": 502,
+    "name": "Example Away FC",
+    "shortName": "Away",
+    "tla": "EXA",
+    "crest": null,
+    "statistics": {
+      "ball_possession": 45,
+      "shots": 7,
+      "shots_on_goal": 3,
+      "fouls": 9
+    }
+  },
+  "score": {
+    "winner": "HOME_TEAM",
+    "duration": "REGULAR",
+    "fullTime": {
+      "home": 2,
+      "away": 1
+    },
+    "halfTime": {
+      "home": 1,
+      "away": 0
+    }
+  },
+  "venue": "Example Stadium",
+  "attendance": 12345
+}

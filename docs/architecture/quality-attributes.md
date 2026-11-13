@@ -1,62 +1,81 @@
 # Quality Attributes
 
-## Purpose
+**Status:** Phase 3 verification is limited to local functional tests. No load, latency,
+availability, cost, or provider-volume measurement has been performed. Numeric targets remain
+unset because any figure would be fabricated.
 
-Defines the quality scenarios the architecture is expected to satisfy and how each will be verified. Numeric targets are not asserted: nothing has been measured, so any figure would be fabricated. Where a target is structural (verifiable by design rather than by load), it is stated as such; where it is operational, it is marked TBD and linked to the measurement that must precede it.
+## 1. Scenarios and Phase 3 evidence
 
-## Scenario table
+| Attribute | Scenario | Phase 3 verification | Remaining gap |
+| --- | --- | --- | --- |
+| Correctness | A provider corrects a result after ingestion | Change log records previous/new values; upsert tested | No real correction observed; live behaviour unverified |
+| Reproducibility | Re-run an ingest over the same window | Idempotency test: second run creates no duplicate and reports unchanged | No prediction path yet |
+| Data integrity | Duplicate fixture delivered twice | Provider mapping + natural key + unique constraint tested | Multi-provider duplicates are intentionally not auto-merged |
+| Missing data | Provider omits a statistic or score | Zero-versus-null and absent-metric tests | Real provider omission patterns unverified |
+| Freshness | Result published after kickoff | `last_synced_at`, sync status, stale flag implemented | Publication lag not measured |
+| Availability | Worker stops; API still serves | API reads only the DB; no provider call in request path | No fault-injection or uptime measurement |
+| API latency | Read one fixture list | Functional tests only | No benchmark on realistic volume |
+| Throughput | Backfill one season | Not measured | Rate limit and volume unknown |
+| Maintainability | Add a second provider | Contract and capability design documented | Not exercised with a second real adapter |
+| Testability | Pure normalisation/validation logic | Unit tests run without network/DB | Coverage is not a target; critical paths tested |
+| Observability | Sync ingests zero rows | Run counts and errors persisted; health/sync endpoints | No alerts or dashboards |
+| Security | API exposed to untrusted clients | Read-only, validated, generic errors, no secrets | No auth/rate limiting: public exposure blocked |
+| Cost | Run for a season | Not measured | Provider pricing UNVERIFIED |
+| Portability | Move to PostgreSQL | SQLAlchemy-only persistence, portable types | **Not tested; no compatibility claim** |
 
-| Attribute | Scenario | Target / acceptance direction | Verification | Trade-off |
-| --- | --- | --- | --- | --- |
-| Correctness | A provider corrects a historical result; a previously stored prediction must remain explainable | Stored prediction and its inputs are unchanged; correction is an appended version; downstream evaluations re-run explicitly | Lineage audit from probability to raw payload; reconciliation tests on known fixtures | Corrections do not silently propagate — some aggregates stay stale until re-run |
-| Reproducibility | Re-score a past fixture with the recorded model version, config, and cutoff | Identical probabilities and diagnostics for the deterministic path | Golden-run test comparing stored and regenerated output | Requires immutable inputs and versioned artifacts, which slows iteration |
-| Data freshness | A result is published by the provider; the platform must reflect it | Visible within TBD after provider publication; depends on polling interval and provider lag — UNVERIFIED | Timestamp delta between provider publication and stored row, measured per job class | Shorter polling increases provider load, rate-limit risk, and cost |
-| Availability | API read during a scheduled worker run or provider outage | Predictions already computed remain served; ingestion failure does not take down reads | Fault injection: stop worker, block provider, query API | Single host means planned maintenance windows and no redundancy |
-| Latency (API reads) | Fetch one prediction with explanation at the 95th percentile | TBD; must be measured on target hardware. Constraint: a request may not trigger ingestion or scoring | Load test against stored read models; query plan review | Precomputed read models add write complexity and staleness |
-| Throughput (batch scoring) | Score all fixtures for one matchday including features | TBD; matchday window is the natural deadline. Must be measured once the feature set stabilises | Timed batch run on representative history | Wider feature sets improve quality but increase runtime and memory |
-| Scalability | Historical backfill grows to full provider history | Vertical scaling first; horizontal splitting only on measured CPU, memory, or IO limits | Profile backfill and scoring separately; identify the first bottleneck | Premature partitioning adds operational cost with no product value |
-| Maintainability | A new league or provider is added | Changes confined to adapters, identity map, and config, not prediction code | Dependency check: no imports across module boundaries; diff size on a trial change | Clean boundaries cost upfront interface design |
-| Testability | Feature or scoring logic changes | Unit tests run without database or network; leakage and determinism tests exist for each new feature | Test suite review; mutation or fixture-based checks on statistical code | Test harnesses for time-dependent logic take effort to build |
-| Observability | A job silently ingests zero rows for a day | Failure is visible as an event with counts, not inferred from missing output | Fault injection on a job class; row-count reconciliation review | Full telemetry adds storage and code noise; must be structured, not verbose |
-| Security | Public consumer queries the API; credentials sit on the host | No internal errors, no raw payload access, least-privilege database role, secrets outside the repository | Checklist review by security-reviewer; dependency and secret scans in later phases | Read-only public surface limits product features until auth is designed |
-| Cost | Run ingestion, storage, and scoring for a season | TBD; single-host budget must be measured against provider pricing — UNVERIFIED | Cost model built from measured volumes, not estimates | Higher coverage and retention increase storage and provider cost |
+## 2. Structural guarantees (verifiable by inspection)
 
-## Conflicts and trade-offs
+- The API module does not import provider or ingestion modules.
+- Provider adapters do not import ORM models.
+- Every provider response is archived before parsing.
+- Every canonical update goes through one ingestion path with validation and identity resolution.
+- Raw payloads and change logs are append-only by design.
+- Statistics cannot represent "missing" as zero: absence is the absence of a row.
+- Default API list queries are bounded by date or page size.
 
-**Freshness versus correctness.** Fast publication of provisional results conflicts with the guarantee that answered queries never change. Resolution: distinguish provisional from confirmed states, expose the distinction in the API, and never edit stored predictions to match updated data.
+## 3. Trade-offs
 
-**Richness versus latency.** More context (lineups, availability, rest, travel) improves estimates but increases feature-build time and failure surface. Resolution: tier features by availability at cutoff, record missingness, and accept narrower coverage per fixture rather than late or guessed inputs.
+**Correctness versus freshness.** A provisional score is not stored as a final result. The
+platform may show a fixture without a score for longer, but it will not later rewrite a "final"
+result silently. Corrections append history.
 
-**Model complexity versus explainability.** A better-scoring model that cannot attribute its output is not usable in this product. Resolution: complexity is admitted only with an explanation path and a measurable out-of-sample gain; otherwise the simpler model wins.
+**Coverage versus identity certainty.** Ambiguous teams/matches are quarantined instead of
+merged. Coverage is lower, but a wrong merge would corrupt every downstream statistic.
 
-**Cost versus coverage.** Covering every competition multiplies provider cost, entity-resolution work, and calibration data requirements. Resolution: depth before breadth — a league's calibration and evaluation must be defensible before adding another.
+**Simplicity versus throughput.** One SQLite writer and one worker are simple and adequate for
+the current workload. They will not scale to concurrent write-heavy use; the migration trigger is
+documented rather than pre-solved.
 
-**Availability versus single-host simplicity.** Redundancy would improve availability but violates the Phase 1 constraint against premature distribution. Resolution: accept planned downtime, keep recovery simple and documented, revisit only on measured user impact.
+**Explainability versus model freedom.** Phase 4 model choices are constrained by the need to
+attribute outputs. No model is admitted just because it scores well.
 
-## Architectural consequences
+**Test depth versus breadth.** Tests focus on validation, identity, idempotency, missing data,
+and failure paths, not on a coverage percentage.
 
-- Correctness and reproducibility require immutable raw payloads and stored cutoffs; no recompute-on-read path is permitted, even for convenience endpoints.
-- Freshness is provider-dependent, so job cadence is configured per entity class rather than as a global constant.
-- Single-host availability makes read-only degradation a requirement: the API serves the last known prediction while ingestion is down, with its timestamp visible.
-- Explainability constrains model choice before performance does; evaluation records must store diagnostics, not only probabilities.
-- Cost and coverage are coupled through provider pricing, so competition scope is a product decision with a measurable operating cost.
+## 4. Measurements required before targets are set
 
-## Verification in later phases
+- Provider publication lag and completeness per competition.
+- Real historical depth and correction frequency.
+- Payload sizes and daily request volume under the chosen plan.
+- API query latency at the 50th/95th percentile on stored data.
+- Backfill duration and rate-limit headroom.
+- Sync batch duration and SQLite lock wait time.
+- Database and archive growth per season.
+- Provider cost per season for the chosen coverage.
 
-- **Correctness, reproducibility:** lineage queries, golden-run comparisons, and replay of recorded payloads in the ingestion test suite.
-- **Freshness, observability:** per-job publication-to-storage deltas and zero-row detection, exercised by fault injection before any public release.
-- **Latency, throughput, scalability, cost:** benchmark on stored data at realistic volume; no target is written into a service objective until measured.
-- **Maintainability:** boundary checks in review and a trial provider/league addition recorded as an ADR.
-- **Security:** boundary review, least-privilege role verification, secret scanning, and response-leak tests.
-- **Testability:** enforced by the test strategy skill and QA sign-off on determinism and leakage evidence.
+Until these exist, no SLA, freshness bound, accuracy, or scale claim may appear in product
+material.
 
-## What must be measured before targets are fixed
+## 5. Verified locally
 
-Provider publication lag and completeness per competition; payload sizes and daily volumes; historical depth available; feature-build time per matchday; scoring time per model version; API query shapes and latency percentiles; correction frequency in historical data; calibration sample size per competition and outcome class; host and storage cost per season; provider pricing and quota terms — UNVERIFIED.
-
-Until these exist, any SLA, freshness bound, or accuracy claim is unsupported and must not appear in product material.
+- The test suite executes against temporary SQLite databases and mocked HTTP transports.
+- Alembic `upgrade head` creates the schema, and a drift test compares migrated tables with the
+  ORM metadata.
+- No test requires a paid API or real credentials.
+- Actual test results are recorded in `PROJECT_STATUS.md`; they are not asserted here.
 
 ## Related documents
 
-- [system-overview.md](system-overview.md), [components.md](components.md), [architecture-principles.md](architecture-principles.md).
-- [testing strategy](../../.opencode/skills/testing-strategy/SKILL.md), [data rules](../../rules/data-rules.md), [security principles](../security/security-principles.md).
+- [system-overview.md](system-overview.md), [components.md](components.md),
+  [data-flow.md](data-flow.md), [security-architecture.md](security-architecture.md)
+- `docs/guides/testing.md`, `rules/data-rules.md`, `rules/system-design-rules.md`

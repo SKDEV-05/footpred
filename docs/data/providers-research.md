@@ -2,7 +2,7 @@
 
 ## Purpose and status
 
-This is a research record, not a procurement decision. No provider has been contacted, contracted, trialled, or given credentials, and no integration exists. Nothing below should be read as a statement of a provider's current price, quota, coverage, or quality. Every commercial claim is marked **VERIFY** (a field that must be checked against primary sources) or **UNVERIFIED** (a belief that has not been checked at all).
+This is a research record, not a procurement decision. No provider has been contacted, contracted, or trialled, and no credentials exist. A reference adapter for football-data.org v4 was implemented in Phase 3 against public documentation, but no live call has been made. Nothing below should be read as a statement of a provider's current price, quota, coverage, or quality. Every commercial claim is marked **VERIFY** (a field that must be checked against primary sources) or **UNVERIFIED** (a belief that has not been checked at all).
 
 The purpose is to define how providers will be evaluated and to name the candidate categories and known unknowns so the next phase starts from evidence rather than impressions.
 

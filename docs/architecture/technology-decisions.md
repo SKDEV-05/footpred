@@ -2,84 +2,105 @@
 
 ## Purpose and status
 
-Evaluation record for candidate technologies. Nothing is selected, installed, licensed, or version-pinned; Phase 1 produced documentation only, and no package manager, container runtime, or database was invoked. Every row is **Under evaluation**. Version numbers, prices, and support windows are deliberately absent — UNVERIFIED.
+This document records candidate technologies and their adoption status. Phase 1 selected
+nothing; Phase 3 adopted the stack below by developer instruction and ADR. Adoption means
+"implemented and tested in this repository", not "proven at production scale".
 
-Selection is decided by architecture need first, then by evidence gathered in a later phase. A technology enters the stack only through an ADR after the trigger conditions below are met.
+Status values: **Adopted (Phase 3)**, **Deferred**, **Not adopted**, **Under evaluation**.
+Version numbers are those actually installed and verified on 2026-11-13 in the development
+environment; they are not a support-window claim.
 
 ## Selection criteria
 
-Fit to the actual problem; maturity and maintenance activity; operational simplicity for one operator; team familiarity; quality of the data/statistics ecosystem; licensing and redistribution compatibility; exit cost if the choice proves wrong; performance only where it constrains a real workload. Popularity is not a criterion.
+Fit to the actual problem; maturity and maintenance activity; operational simplicity for one
+operator; team familiarity; quality of the data/statistics ecosystem; licensing compatibility;
+exit cost; performance only where it constrains a measured workload. Popularity is not a
+criterion.
 
-## Evaluation table
+## Adopted for Phase 3
 
-| Technology | Layer | Purpose | Why it may help | Disadvantages / risks | Class | Earliest sensible introduction | Status |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| Python | Language/runtime | Application, ingestion, modelling | One language across API, data and models; strongest statistics ecosystem | GIL limits CPU parallelism; dynamic typing needs tests and discipline | Essential | Foundation | Under evaluation |
-| FastAPI | API framework | HTTP API and OpenAPI contract | Typed models via Pydantic, async support, generated docs | Async/sync driver mismatches; framework conventions to learn | Essential | Product surface | Under evaluation |
-| Pydantic | Validation | Boundary validation of provider payloads and API contracts | Explicit schemas, actionable validation errors | Runtime cost on large payloads; model-definition churn | Essential | Acquisition | Under evaluation |
-| SQLAlchemy | Persistence | Canonical store access and transactions | Mature, explicit transactions, single source of query construction | ORM misuse hides N+1 and lazy loads; complex SQL leaks abstractions | Essential | Acquisition | Under evaluation |
-| Alembic | Migrations | Versioned schema migrations | Reviewable, ordered migrations tied to models | Hand-edited migrations; branch conflicts with parallel work | Essential | Acquisition | Under evaluation |
-| Pandas | Dataframes | Ad-hoc analysis and small/medium transforms | Ubiquitous, fast to write, familiar | Memory blowup, index semantics, silent dtype coercion | Optional | Intelligence | Under evaluation |
-| Polars | Dataframes | Larger transforms with strict typing | Lazy plans, multithreading, explicit schemas | Smaller ecosystem; different API; team familiarity unproven | Optional | When measured volume demands | Under evaluation |
-| NumPy | Numerics | Arrays, linear algebra, simulation | Foundation of the statistics and ML stack; stable | Not a data model; dtype and NaN pitfalls | Essential | Intelligence | Under evaluation |
-| PostgreSQL | Database | Canonical store, constraints, transactions | ACID, range types, JSONB, window functions for point-in-time queries, single-node simplicity | Operator owns backups, vacuum, tuning; not a job queue | Essential | Acquisition | Under evaluation |
-| Redis | Cache/queue | Optional cache or Celery broker | Simple, fast, well understood | Second stateful system; invalidation bugs; risks becoming an accidental source of truth | Optional | Only when justified | Under evaluation |
-| scikit-learn | ML | Baselines, calibration, metrics, CV | Reliable implementations; isotonic/Platt calibration; clean evaluation utilities | Easy pipeline leakage; not for large or deep models | Essential (baselines) | Intelligence | Under evaluation |
-| XGBoost | ML | Gradient boosting | Strong tabular performance; mature tooling | Overfitting, tuning cost; second GBM library duplicates capability | Optional | After baselines are beaten | Under evaluation |
-| LightGBM | ML | Gradient boosting | Fast, memory-efficient, categorical support | Same overfit/leakage risk; duplicates XGBoost capability | Optional | After baselines are beaten | Under evaluation |
-| PyTorch | ML | Deep learning, sequence models | Flexible; strong research ecosystem | GPU/ops cost; likely insufficient data volume; poor explainability | Deferred | Evidence-gated, later | Under evaluation |
-| Celery | Task queue | Queued execution, retries, routing | Mature retry/routing semantics; multiple workers | Broker dependency and operational surface for one worker | Optional | When retries outgrow scheduler | Under evaluation |
-| APScheduler | Scheduling | In-process periodic jobs | Minimal footprint; no broker; adequate for a single worker | No durable queue; retries hand-built; assumes single process | Optional | Acquisition | Under evaluation |
-| Next.js | Frontend | Presentation layer | SSR, routing, TypeScript integration | Adds build/runtime surface; premature before contract stability | Deferred | Product surface | Under evaluation |
-| TypeScript | Frontend language | Typed UI and API client | Contract types, safer refactors | Duplicate type definitions unless generated from OpenAPI | Deferred | Product surface | Under evaluation |
-| Docker | Packaging | Reproducible runtime and deployment | Environment parity; pinned OS-level dependencies | Extra debugging layer; image hygiene; unnecessary on one host initially | Optional | When environment drift appears | Under evaluation |
-| Linux | OS | Host runtime | Standard, low-cost, well-supported | Operator owns patching and monitoring | Essential | Foundation | Under evaluation |
-| Git | VCS | Code, docs, migrations, config history | Reviewable history and ADR trail | Data and large payloads must stay out of the repository | Essential | Foundation | Under evaluation |
+| Technology | Layer | Purpose | Version verified | Decision |
+| --- | --- | --- | --- | --- |
+| Python | Language/runtime | API, ingestion, future modelling | 3.15.2 | Adopted; declared floor 3.11 |
+| FastAPI | API framework | HTTP API, validation, OpenAPI | 0.162.7 | Adopted (ADR-0002) |
+| Pydantic v2 | Validation | Provider and API contracts | 2.14.3 | Adopted |
+| pydantic-settings | Configuration | Environment-based settings | 2.16.3 | Adopted |
+| SQLAlchemy 2 | Persistence | ORM, transactions, portable queries | 2.1.8 | Adopted |
+| Alembic | Migrations | Versioned schema changes | 1.20.1 | Adopted |
+| SQLite | Database | Phase 3 canonical store | stdlib `sqlite3` | Adopted (ADR-0003) |
+| HTTPX | HTTP client | Provider transport, mockable tests | 0.28.1 | Adopted |
+| APScheduler | Scheduling | Single-worker periodic sync | 3.11.3 | Adopted (ADR-0007) |
+| pytest | Testing | Unit/integration/data tests | 9.2.0 | Adopted |
+| Uvicorn | ASGI server | Local API process | 0.54.0 | Adopted for local run |
 
-## Leading hypothesis for the core
+## Deferred or not adopted
 
-"Class" below reflects how important a technology would be if the project builds the stack
-described here; it is not an adoption decision. Every row remains under evaluation, and
-adoption requires an ADR after the trigger conditions are met.
+| Technology | Status | Reason / trigger |
+| --- | --- | --- |
+| PostgreSQL | Deferred by developer instruction | Phase 3 uses SQLite. Revisit on measured write contention, concurrent workers, replication, or access-control needs. **Compatibility unverified.** |
+| Redis | Not adopted | No cache or broker requirement; cache would not be authoritative |
+| Celery | Not adopted | One worker; APScheduler plus persisted run records is sufficient. Revisit for durable queues/multiple workers |
+| Pandas | Deferred | Not needed for per-record validation/upsert. Revisit for bulk feature construction |
+| Polars | Deferred | Same; requires a measured volume benchmark |
+| NumPy | Deferred | Phase 4 statistics dependency |
+| scikit-learn | Deferred | Phase 4 baselines/calibration |
+| XGBoost / LightGBM | Deferred | Phase 4, only after a baseline is beaten out-of-sample |
+| PyTorch | Deferred | Evidence-gated, later |
+| Docker | Deferred | No environment drift or second target yet; not required for one host |
+| Next.js / TypeScript | Deferred | No frontend; contract not stable for a client |
+| LLM runtime | Not adopted | Prohibited in the numerical prediction path; no explanation engine yet |
 
-Python + PostgreSQL + FastAPI + SQLAlchemy/Alembic is the working hypothesis, not a decision. The reasoning: one language covers ingestion, statistics, and serving; PostgreSQL provides constraints, transactions, and the window/range queries that point-in-time feature reads require without adding a second store; FastAPI and Pydantic keep the provider and API boundaries typed; Alembic makes schema change reviewable. This combination is also the least surprising to a small team and the cheapest to operate on one host.
+## Leading architecture choice
 
-The hypothesis fails if measured feature-building or scoring throughput cannot be met vertically, or if provider data volume forces columnar processing earlier than expected.
+A modular monolith: one FastAPI application, one SQLite database, one optional scheduler process,
+one codebase. This satisfies the Phase 3 workload without a broker, cache, container, or
+distributed system. Boundaries are enforced by module imports and tested by review.
 
-## When Polars versus Pandas matters
+The choice fails if measured API latency, write contention, or multi-worker scheduling cannot be
+met vertically. The first response is measurement, not a new service.
 
-Pandas is adequate for exploratory work and modest transforms, where development speed dominates. Polars becomes relevant when a backfill or feature build exceeds available memory or when strict schemas would prevent silent dtype coercion. The choice is per workload, not per repository: mixing both is acceptable if the boundary is explicit and tested. Neither is required for the first ingestion milestone.
+## Why SQLite now
 
-## Redis as optional infrastructure
+The developer fixed SQLite for Phases 2–3. It is sufficient for one writer and read-only API
+traffic, costs nothing to operate, and keeps backup and tests simple. It is **not** equivalent to
+PostgreSQL for concurrent writes or multi-user production use. The migration trigger and the
+required work are in ADR-0003 and `docs/architecture/deployment-preparation.md`.
 
-Redis is a cache and, if Celery is adopted, a broker. It must never hold canonical state: cache loss may cost latency, never correctness. Adoption requires a cache-invalidation design and a rule that every cached value is derivable from PostgreSQL. Until read latency or job throughput is measured as insufficient, Redis is unjustified complexity.
+## Why not Redis or Celery yet
 
-## Celery versus APScheduler
+Redis is a cache and broker; it must never hold canonical state. No measured latency or queue
+pressure justifies it. Celery brings durable retries and multiple workers at the cost of a broker
+and more operations. APScheduler plus `data_sync_runs` covers the current need; the upgrade
+trigger is jobs that must survive restarts, multiple workers, or retry logic rewritten twice.
 
-APScheduler fits a single worker with periodic jobs and no broker; retries, locking, and failure visibility must then be implemented explicitly. Celery brings durable queues, retry semantics, and multiple workers at the cost of a broker and more moving parts. The deciding evidence is operational, not stylistic: jobs surviving process restarts, several workers, or retry logic that has already been rewritten twice. Either way, handlers remain idempotent.
+## Why not a dataframe library in ingestion
 
-## PyTorch, Next.js, and Docker
-
-PyTorch is deferred until gradient boosting and statistical baselines are beaten out-of-sample on stored evaluation data, with enough data volume to justify sequence models and an explanation path that does not collapse into "the network said so". Next.js and TypeScript are deferred until the API contract is stable and UX work is scheduled; otherwise the frontend encodes a contract that is still moving. Docker is deferred as a packaging convenience: valuable once environment drift causes reproducibility failures or a second deployment target exists, but not required to run one process on one host.
+Ingestion is record-oriented: validate one match, resolve identity, upsert. Pulling a dataframe
+library in now would add a dependency and a second data model without serving a requirement.
+The feature builder in Phase 4 may adopt one library; the choice must be recorded in an ADR with
+a benchmark on stored data.
 
 ## Decision triggers
 
 | Candidate | Evidence that would justify adoption | Prerequisite |
 | --- | --- | --- |
-| Redis | Measured read latency or queue throughput that PostgreSQL polling cannot meet at acceptable cost | Cache-invalidation design; explicit non-source-of-truth rule |
-| Celery | Jobs outlive process restarts, need multiple workers, or retry logic has been reimplemented | Broker operations plan; idempotency audit of handlers |
-| Polars | Feature build or backfill exceeds memory or time budget on realistic stored data | Benchmark on the actual dataset, not synthetic volumes |
-| XGBoost / LightGBM | A statistical baseline is consistently beaten out-of-sample on stored evaluation data | Fixed split protocol, calibration comparison, one GBM library chosen |
-| PyTorch | Demonstrated gain over tree/statistical models on sequence or relational structure | Data-volume assessment, inference cost, explanation path |
-| Docker | Environment drift causes reproducibility failures, or a second target host appears | Pinned base image; no secrets baked into images |
-| Next.js / TypeScript | API contract versioned and stable; UX implementation scheduled | Client types generated from the OpenAPI schema |
-| Pandas / Polars both | — | Choose one primary dataframe library before the feature builder ships; record in an ADR |
+| PostgreSQL | Write contention, concurrent workers, replication, or row-level access control | New ADR, data export/import rehearsal, full test run on PostgreSQL |
+| Redis | Measured read latency or queue throughput SQLite cannot meet | Invalidation design; never authoritative |
+| Celery | Jobs outlive restarts, need multiple workers, or retry logic is reimplemented | Broker operations plan, idempotency audit |
+| Pandas/Polars | Feature build or backfill exceeds memory/time budget on real data | Benchmark on the actual dataset; one primary library |
+| XGBoost/LightGBM | A statistical baseline is beaten out-of-sample | Fixed split protocol, calibration comparison |
+| PyTorch | Demonstrated gain on sequence/relational structure | Data volume, inference cost, explanation path |
+| Docker | Environment drift or a second target host | Pinned image; no secrets baked in |
+| Next.js/TypeScript | API contract stable and UX scheduled | Client types generated from OpenAPI |
 
-## Explicit status note
+## Evidence note
 
-No installation, dependency resolution, or licence review occurred in Phase 1. Licensing compatibility for providers and libraries remains UNVERIFIED and must precede any adoption.
+Framework versions above were observed by importing the installed packages, not copied from a
+marketing page. Provider pricing, quotas, coverage, and licensing remain **UNVERIFIED**; see
+`docs/data/providers-research.md` and the dated research note for the reference provider.
 
 ## Related documents
 
-- [system-overview.md](system-overview.md), [components.md](components.md), [quality-attributes.md](quality-attributes.md).
-- [ADR-0001](../decisions/ADR-0001-project-foundation.md), [engineering rules](../../rules/engineering-rules.md).
+- ADR-0002 (stack), ADR-0003 (SQLite), ADR-0004 (provider), ADR-0007 (synchronisation)
+- [system-overview.md](system-overview.md), [components.md](components.md),
+  [database-design.md](database-design.md), [quality-attributes.md](quality-attributes.md)

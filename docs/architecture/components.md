@@ -1,82 +1,113 @@
 # Components
 
-## Purpose
+**Status:** Phase 3 modules are implemented in `apps/backend/app/`. Future intelligence
+components are design-only and marked accordingly. Components are modules in one codebase, not
+services.
 
-Catalogue of the proposed modules of a single deployable application plus one worker process. Components are *modules in one codebase*, not services: they communicate through typed in-process interfaces and share one relational database, with ownership rules per [architecture-principles.md](architecture-principles.md). Nothing here is implemented; all contracts are proposals.
+## 1. Module catalogue
 
-Phase labels below indicate the earliest sensible introduction, not a committed roadmap; sequencing is subject to ADR approval. Names in the columns are internal identifiers, not provider or library choices.
+| Component | Responsibility | Owns data | Phase | Status |
+| --- | --- | --- | --- | --- |
+| `core.config` | Typed environment configuration, secret wrapping, fail-fast validation | none | 3 | Implemented |
+| `core.logging` | JSON logs, request correlation, redaction | none | 3 | Implemented |
+| `core.exceptions` | Typed application errors and API mapping | none | 3 | Implemented |
+| `database.session` | Engine, SQLite pragmas, session factory, unit of work | connection state | 3 | Implemented |
+| `models` | Canonical entities, provider mappings, provenance, statistics | schema definition | 3 | Implemented |
+| `repositories` | Read queries, filters, pagination | none (reads) | 3 | Implemented |
+| `providers.base` | Adapter contract and capability declaration | none | 3 | Implemented |
+| `providers.http` | Timeouts, retries, backoff, rate limiting, typed errors | none | 3 | Implemented |
+| `providers.adapters.*` | Vendor transport and parsing | adapter config | 3 | Implemented (live-unverified) |
+| `ingestion.raw_archive` | Content-addressed payload storage | raw payload files + rows | 3 | Implemented |
+| `normalization` | Names, enums, UTC, season labels, metric keys | none | 3 | Implemented |
+| `validation` | Field, range, and cross-field checks | none | 3 | Implemented |
+| `ingestion.identity` | Internal identity and provider mappings | mapping tables | 3 | Implemented |
+| `ingestion.*` | Competitions, teams, fixtures, results, statistics | canonical tables | 3 | Implemented |
+| `sync.engine` | Run lifecycle, counts, status, error capture | sync tables | 3 | Implemented |
+| `sync.scheduler` | Periodic single-worker scheduling | schedule config | 3 | Implemented |
+| `cli` | Manual operations and operator status | none | 3 | Implemented |
+| `api.v1` | Read-only HTTP contract | none | 3 | Implemented |
+| Feature builder | Point-in-time feature vectors | feature tables | 4 | Not implemented |
+| Team/match intelligence | Strength, form, context estimates | derived tables | 4 | Not implemented |
+| Prediction and calibration | Deterministic probabilities and versioned maps | prediction tables | 4 | Not implemented |
+| Evaluation/backtesting | Proper scoring, reliability, segments | evaluation tables | 4 | Not implemented |
+| Explanation engine | Read-only reasons over stored outputs | explanation records | 4 | Not implemented |
+| Frontend | Presentation | none | 5 | Not implemented |
 
-| Component | Responsibility | Inputs | Outputs | Owns data | Failure modes | Phase |
-| --- | --- | --- | --- | --- | --- | --- |
-| Provider adapter layer | Translate each provider's transport and schema into one internal fetch contract | Credentials, endpoints, query parameters | Bytes plus fetch metadata (provider, URL, timestamp, hash) | Adapter configuration only | Auth expiry, rate limits, schema drift, silent field renames | Acquisition |
-| Ingestion scheduler | Decide what to fetch and when; dispatch jobs | Fixture calendar, job definitions, retry state | Job runs with idempotency keys | Schedule and cursor state | Missed runs, duplicate dispatch, unbounded backfill | Acquisition |
-| Raw payload archive | Preserve exactly what was received | Fetch bytes and metadata | Immutable objects addressable by content hash | Raw payload objects | Disk/write failure after fetch, unmanaged growth | Acquisition |
-| Normalization and entity resolution | Validate payloads, map provider entities to internal IDs | Raw payloads, identity map | Canonical records, quarantine entries | Identity map, quarantine | Wrong merges, unresolved entities, silent coercion | Acquisition |
-| Historical store | Authoritative canonical history with validity intervals | Canonical records | Queryable fixtures, results, lineups, statistics | All canonical relational data | Constraint violations, partial loads, corrupt corrections | Acquisition |
-| Feature builder | Compute point-in-time features from stored history | Historical store, cutoff timestamps, definitions | Versioned feature vectors with lineage | Feature definitions and metadata | Lookahead leakage, non-deterministic aggregation, stale cache | Intelligence |
-| Team intelligence | Estimate team strength, form, and consistency as of a cutoff | Features | Team state estimates with uncertainty | Derived team-state records | Small-sample overfit, rating instability, cross-league bias | Intelligence |
-| Match intelligence | Derive match context: rest, travel, availability, competition importance | Features, fixture context | Match-context factors with missing-data flags | Derived match-state records | Missing context treated as neutral, unverified inputs | Intelligence |
-| Statistical prediction engine | Deterministic mapping from stored inputs to outcome scores | Feature vector, model version, config | Score vector, diagnostics, run record | Model definitions in code; run records | Silent model change, numeric instability, input drift | Intelligence |
-| ML engine (deferred) | Learned models where out-of-sample gain over baselines is demonstrated | Feature sets, labels, fixed splits | Versioned artifacts, metrics | Artifacts, experiment records | Leakage in splits, overfit, unreproducible training | Later |
-| Probability calibration | Map engine outputs to calibrated probabilities and intervals | Raw scores, stored outcomes, segment definition | Calibrated probabilities, uncertainty, map version | Calibration maps and metadata | Calibration on thin data, drift after rule or provider change | Intelligence |
-| Explanation engine | Assemble reasons from verified stored intermediates | Prediction record, feature contributions | Structured explanation, referenced factors | Explanation templates and records | Post-hoc rationalisation, text contradicting numbers | Product surface |
-| Evaluation and backtesting | Score stored pre-kickoff predictions against results and baselines | Prediction snapshots, confirmed results, baselines | Metrics, reliability curves, segment error | Evaluation records | Survivorship bias, hindsight edits, unregistered baseline changes | Intelligence |
-| API layer | Serve predictions, explanations, track record, and metadata | Stored read models | JSON over HTTP | Read models and views | Unbounded queries, internal detail leakage, stale cache | Product surface |
-| Background worker and synchronization | Execute scheduled and queued jobs outside request handling | Job payloads | Execution records, retries, failure states | Job execution records | Duplicate execution, stuck jobs, clock skew | Acquisition |
-| Observability and operations | Make failures and data state visible and auditable | Logs, metrics, run records, health checks | Alerts, dashboards, audit trail | Operational telemetry | Alert fatigue, missing data-error signal | Foundation |
+## 2. Boundaries and dependency direction
 
-## Component boundaries
+```
+api ──► repositories ──► models/database
+ │
+ └──► schemas
 
-### Provider adapter layer
-Adapters are stateless: they fetch and return, and never write to the canonical store. Every response is archived before parsing, so a parser regression cannot destroy evidence. Out of scope in Phase 1: provider selection, credential handling, pagination and backoff policy values.
+cli / worker ──► sync ──► ingestion ──► providers
+                    │          │
+                    │          ├──► normalization
+                    │          ├──► validation
+                    │          └──► identity ──► repositories/models
+                    └──► raw_archive
+```
 
-### Ingestion scheduler
-Dispatch is at-least-once with idempotency keys derived from (provider, entity type, entity id, date window). Re-running a window produces no duplicate canonical rows. Out of scope: distributed scheduling, priority queues, streaming ingestion.
+Rules enforced by review and tests:
 
-### Raw payload archive
-Content-addressed and append-only; corrections create new objects rather than overwriting. Out of scope: retention duration, compression format, cold-tier migration.
+- `api` never imports `providers` or `ingestion`.
+- `providers` never imports `models`, `repositories`, or `api`.
+- `models` never imports `providers`.
+- Ingestion may import all of the above; nothing imports ingestion except `sync` and `cli`.
+- No module writes another module's tables through private code paths; ingestion owns writes,
+  repositories own reads.
 
-### Normalization and entity resolution
-Unresolved or invalid entities are quarantined and block downstream use rather than being guessed; every canonical row links to a raw object hash. Out of scope: fuzzy-match thresholds, manual review UI, cross-provider reconciliation strategy.
+## 3. Component contracts
 
-### Historical store
-Single owner of canonical truth. Corrections append versions with reason and actor; no in-place rewrite of history. Out of scope: concrete schema, partitioning, read replicas — schema belongs to the data documentation set.
+### Provider adapter
 
-### Feature builder
-Every feature is computed as of an explicit cutoff using only data available then, and is stored with its definition version. Out of scope: online feature serving, a standalone feature-store product, streaming features.
+- Methods: `fetch_competitions`, `fetch_competition`, `fetch_seasons`, `fetch_teams`,
+  `fetch_matches`, `fetch_match_detail`.
+- Unsupported operations raise `UnsupportedCapabilityError`.
+- Parsing returns internal DTOs; vendor JSON does not leave the adapter except in the archive.
+- No adapter writes to the database.
 
-### Team intelligence
-Outputs carry sample size and uncertainty; no rating is published without a stated basis. Out of scope: player tracking data, market values, scouting judgements.
+### Ingestion
 
-### Match intelligence
-Each context factor traces to a stored record; absent data remains marked missing. Out of scope: injury-severity models, tactical or formation inference.
+- Accepts a session, a provider, a run, and explicit parameters.
+- Returns counts (`fetched`, `created`, `updated`, `unchanged`, `rejected`).
+- Never swallows a failure; per-item failures are recorded and counted.
+- Idempotent: the same input twice yields the same canonical state.
 
-### Statistical prediction engine
-A pure function of (stored feature vector, model version, config): no network calls, no clock reads, no randomness at inference. Identical inputs must produce identical outputs. Out of scope: model-family selection, hyperparameter tuning, live in-match probabilities.
+### Repositories
 
-### ML engine (deferred)
-When introduced, it must share the prediction engine's input/output contract, record training snapshots and splits, checksum artifacts, and be promoted only after out-of-sample improvement over the statistical baseline. Out of scope in Phase 1: any ML code, GPU infrastructure, experiment-tracking tooling.
+- Expose typed query methods with bounded pagination.
+- Return ORM entities or lightweight projections; never expose sessions to the API layer.
+- No provider calls and no writes.
 
-### Probability calibration
-Applied after the engine and versioned separately. Recalibration supersedes with a new model version; it never rewrites stored past predictions. Out of scope: method choice, per-competition calibration policy.
+### Sync engine
 
-### Explanation engine
-Read-only over stored predictions and contributions. It cannot alter a probability, and every explanation cites the model version and cutoff it describes. Out of scope in Phase 1: any generation or LLM code, and UI copy. If an LLM is used later for phrasing, it remains read-only over verified stored outputs per `rules/ai-usage-rules.md`.
+- Creates and finalises `data_sync_runs`.
+- Converts unexpected exceptions into a visible `failed` run with a redacted summary.
+- Does not retry validation failures and does not continue after an unrecoverable job error.
 
-### Evaluation and backtesting
-Consumes immutable pre-kickoff snapshots and confirmed results. Late result corrections are recorded and trigger re-evaluation; stored predictions are never recomputed silently. Out of scope: public leaderboards; market-odds comparison unless licensed ex-ante data is proven available — UNVERIFIED.
+### API
 
-### API layer
-Read-only for public consumers in early phases. Responses include model version, feature cutoff, and completeness flags; internal errors are not exposed. Out of scope: authentication provider, versioning scheme, pagination limits, write endpoints.
+- Read-only in Phase 3.
+- One error envelope, generated OpenAPI, bounded pages.
+- No raw payloads, no provider fields, no credentials.
 
-### Background worker and synchronization
-Same codebase as the API, separate process. Long-running work is queued, retried with bounded backoff, then surfaced as a visible failure. Out of scope: broker choice, autoscaling, multi-worker sharding.
+## 4. Failure ownership
 
-### Observability and operations
-Every job, fetch, parse, score, and evaluation records start, end, counts, and errors; data-quality failures are first-class events rather than log lines. Out of scope: vendor selection, numeric SLOs, dashboard design.
+| Failure | Owner | Visible state |
+| --- | --- | --- |
+| Provider transport/retry | `providers.http` | Typed error → failed run |
+| Parsing/schema drift | Adapter | Parse error → failed run |
+| Invalid record | `validation` | Quarantine + rejected count |
+| Ambiguous identity | `ingestion.identity` | Quarantine + rejected count |
+| Duplicate constraint | Ingestion/persistence | Quarantine + rejected count |
+| Database outage | `database.session` | Failed run; API 503 |
+| Stale data | `sync` + health endpoint | `data_is_stale`, last success timestamp |
+| API contract misuse | `api` | 404/422 in the common envelope |
 
-## Related documents
+## 5. Deliberately not separated
 
-- [system-overview.md](system-overview.md) — context, data flow, deployment sketch.
-- [architecture-principles.md](architecture-principles.md) — boundary and provenance rules.
-- [quality-attributes.md](quality-attributes.md) — verification of component behaviour.
+Provider adapters, ingestion, and the sync engine are in-process modules, not services. They
+have different rate-of-change and failure characteristics but no independent scaling or trust
+boundary that would justify a network contract today. Extraction remains possible because the
+adapter contract and ingestion functions are explicit.

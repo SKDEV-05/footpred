@@ -8,16 +8,20 @@ Defines what work is permitted now, what is a candidate for the next phase, and 
 
 | Phase | Content | Status | Gate to enter |
 | --- | --- | --- | --- |
-| 1. Foundation | Instructions, agents, skills, rules, product and domain documentation, decisions | Complete, pending developer review | None; current phase |
-| 2. Data foundation (candidate) | Source verification, data model, ingestion prototype | Not approved | Developer approval after reviewing Phase 1 and the spike proposal |
-| 3. Analysis and modelling | Statistical engine, calibration, evaluation harness | Not approved | Phase 2 exit criteria met and modelling ADRs approved |
-| 4. Product surface | API and frontend for validated outputs | Not approved | Stable analysis outputs, API contract, UX review |
+| 1. Foundation | Instructions, agents, skills, rules, product and domain documentation | Artefacts delivered | Developer review |
+| 2. System architecture | Stack, SQLite schema design, provider boundary, read-only API contract, identity, sync | Documents delivered; ADR sign-off pending | Developer's Phase 2/3 brief |
+| 3. Data foundation backend | Python backend, SQLite migrations, adapter, ingestion, sync, read-only API, tests, guides | Implemented locally; independent reviews blocked | Developer's Phase 2/3 brief |
+| 4. Future work | Prediction, modelling and evaluation; product-surface work requires separately bounded approval | Not started or approved | Review of Phases 2/3, verified data, licensing and explicit developer approval |
 
-Phase 1 permits documentation only. No code, database, external API call, package installation, or deployment artefact is in scope. Phase 1 is complete when the foundation artefacts exist and the developer has reviewed them; see `PROJECT_STATUS.md`.
+The Phase 1 candidate roadmap below was superseded by the developer's Phase 2/3 brief.
+Phase 3 permits the data backend, not predictions, ML, frontend, authentication or deployment.
+Live provider access still requires approval and credentials. See
+[`PROJECT_STATUS.md`](../../PROJECT_STATUS.md) for verification and outstanding gates.
 
-## In scope for the next phase candidate
+## Historical Phase 1 candidate (superseded, not authorisation)
 
-The following are candidates for Phase 2. They are not approved and must not start before explicit developer approval.
+The following was the original Phase 2 proposal. It remains here as historical context;
+it does not authorise a provider trial or expand the current implementation.
 
 | Candidate work item | Deliverable | Decision it enables |
 | --- | --- | --- |
@@ -32,10 +36,10 @@ The spike is research, not procurement. It must not commit to a provider, store 
 | Item | Earliest phase | Reason |
 | --- | --- | --- |
 | Frontend or mobile application | 4 | Depends on a stable API and validated analysis |
-| ML models in production | 3 or later | Requires a data foundation and evaluation harness |
+| ML models in production | Unscheduled; not Phase 3 | Requires verified data, evaluation and explicit approval |
 | Monetisation, pricing, subscriptions | Not scheduled | No validated product or cost model |
 | User accounts and personalisation | Not scheduled | Adds security and privacy scope without validated need |
-| Public API | 4 | Contract stability is unproven |
+| Public API | Unscheduled | No authentication, rate limiting or licensing clearance |
 | Live or in-play analysis | Not scheduled | Latency and data quality requirements are unmet |
 | Additional sports | Not scheduled | Football domain assumptions are unvalidated |
 

@@ -2,7 +2,14 @@
 
 ## Purpose and scope
 
-This document states the security principles future implementation must satisfy. No application code exists, so nothing here is a claim about current security posture. The scope covers services, ingestion pipelines, scheduled jobs, agent tooling, and documentation. Binding requirements are in [`../../rules/security-rules.md`](../../rules/security-rules.md); this document explains intent without duplicating them.
+This document states the security principles the implementation must satisfy. It is not a
+security audit: Phase 3 implements configuration, logging, archive, and a read-only API, but has
+no authentication, authorisation, rate limiting, or TLS. Current posture and deployment
+constraints are recorded in [`../architecture/security-architecture.md`](../architecture/security-architecture.md)
+and [`../architecture/deployment-preparation.md`](../architecture/deployment-preparation.md).
+The scope covers services, ingestion pipelines, scheduled jobs, agent tooling, and documentation.
+Binding requirements are in [`../../rules/security-rules.md`](../../rules/security-rules.md); this
+document explains intent without duplicating them.
 
 Security is a property of the evidence chain: if predictions can be altered, or provider credentials stolen, the product's core claim collapses regardless of model quality.
 

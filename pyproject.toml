@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "football-intelligence"
+version = "0.1.0"
+description = "Football data foundation: ingestion, normalization, storage, and read-only API."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+dependencies = [
+    "fastapi==0.162.7",
+    "uvicorn==0.54.0",
+    "pydantic==2.14.3",
+    "pydantic-settings==2.16.3",
+    "SQLAlchemy==2.1.8",
+    "alembic==1.20.1",
+    "httpx==0.28.1",
+    "APScheduler==3.11.3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==9.2.0"]
+
+[project.scripts]
+football-cli = "app.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["apps/backend"]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["apps/backend"]
+testpaths = ["apps/backend/tests"]
+addopts = "-q"
+filterwarnings = [
+    "error::DeprecationWarning:app.*",
+]
+markers = [
+    "live: requires real provider credentials; skipped by default",
+]
+
+[tool.coverage.run]
+source = ["apps/backend/app"]

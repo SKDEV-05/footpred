@@ -26,21 +26,29 @@ The platform must never promise guaranteed outcomes or a fixed accuracy figure.
 
 ## 3. Current phase
 
-**Phase 1 — Foundation. Status: complete, pending developer review.**
-Only foundation artefacts exist: instructions, agents, skills, commands, documentation,
-memory, and rules. There is no application code and no database.
+**Phase 3 — Data foundation backend. Status: delivered; acceptance pending.**
+Independent QA/security reviews were blocked by a tool usage limit and remain required.
+Phases 1–3 produced instructions, agents, skills, commands, documentation, memory, rules, and a
+Python backend with a SQLite schema, provider adapter, ingestion pipeline, and read-only API.
+No prediction engine, ML model, frontend, authentication, or deployment exists. No live provider
+call has been made and no coverage is verified.
 
 See `PROJECT_STATUS.md` and `memory/current-state.md`.
 
 ## 4. Phase boundaries (hard)
 
-Until the developer explicitly approves a new phase, agents must not:
+Until the developer explicitly approves Phase 4, agents must not:
 
-- install packages or system software (Python, Node, OS packages);
-- create application source code, endpoints, frontends, containers, or deployment config;
-- connect to football APIs or any external data provider;
-- create databases, schemas, migrations, or seed/mock football data;
-- implement models, backtests, or prediction algorithms;
+- implement a prediction engine, probability model, features, backtests, or evaluation harness;
+- add machine learning training or an LLM analysis path;
+- create a frontend, UI components, or branding;
+- add authentication, authorisation, subscriptions, payments, or betting features;
+- create containers, deployment configuration, CI/CD, or public hosting;
+- connect to a football API for a live run without explicit approval and credentials;
+- install a new major technology or change the approved stack;
+- run a destructive migration, or delete stored data or archived payloads;
+- commit secrets, a real `.env`, or provider data whose licence is unclear;
+- seed the database with invented football data, or present synthetic data as real;
 - modify global OpenCode configuration or unrelated repositories.
 
 If a task appears to require any of these, stop and request approval. Do not "helpfully"

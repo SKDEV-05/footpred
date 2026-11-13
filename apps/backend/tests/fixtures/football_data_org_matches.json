@@ -1,0 +1,137 @@
+{
+  "_notice": "SYNTHETIC TEST DATA - structure follows the documented football-data.org v4 shape; identifiers, names, scores, and dates are invented.",
+  "filters": {
+    "dateFrom": "2026-08-01",
+    "dateTo": "2026-08-31"
+  },
+  "resultSet": {
+    "count": 2,
+    "competitions": "EL",
+    "first": "2026-08-01",
+    "last": "2026-08-31",
+    "played": 1
+  },
+  "competition": {
+    "id": 9001,
+    "name": "Example League",
+    "code": "EL",
+    "type": "LEAGUE",
+    "emblem": null
+  },
+  "matches": [
+    {
+      "area": {
+        "id": 2000,
+        "name": "Examplia",
+        "code": "EX",
+        "flag": null
+      },
+      "competition": {
+        "id": 9001,
+        "name": "Example League",
+        "code": "EL",
+        "type": "LEAGUE",
+        "emblem": null
+      },
+      "season": {
+        "id": 7001,
+        "startDate": "2026-08-01",
+        "endDate": "2027-05-31",
+        "currentMatchday": 12,
+        "winner": null
+      },
+      "id": 8001,
+      "utcDate": "2026-08-15T15:00:00Z",
+      "status": "FINISHED",
+      "matchday": 1,
+      "stage": "REGULAR_SEASON",
+      "group": null,
+      "lastUpdated": "2026-08-15T17:05:00Z",
+      "homeTeam": {
+        "id": 501,
+        "name": "Example Home FC",
+        "shortName": "Home",
+        "tla": "EXH",
+        "crest": null
+      },
+      "awayTeam": {
+        "id": 502,
+        "name": "Example Away FC",
+        "shortName": "Away",
+        "tla": "EXA",
+        "crest": null
+      },
+      "score": {
+        "winner": "HOME_TEAM",
+        "duration": "REGULAR",
+        "fullTime": {
+          "home": 2,
+          "away": 1
+        },
+        "halfTime": {
+          "home": 1,
+          "away": 0
+        }
+      },
+      "venue": "Example Stadium",
+      "attendance": 12345
+    },
+    {
+      "area": {
+        "id": 2000,
+        "name": "Examplia",
+        "code": "EX",
+        "flag": null
+      },
+      "competition": {
+        "id": 9001,
+        "name": "Example League",
+        "code": "EL",
+        "type": "LEAGUE",
+        "emblem": null
+      },
+      "season": {
+        "id": 7001,
+        "startDate": "2026-08-01",
+        "endDate": "2027-05-31",
+        "currentMatchday": 12,
+        "winner": null
+      },
+      "id": 8002,
+      "utcDate": "2026-08-22T15:00:00Z",
+      "status": "TIMED",
+      "matchday": 2,
+      "stage": "REGULAR_SEASON",
+      "group": null,
+      "lastUpdated": "2026-08-10T09:00:00Z",
+      "homeTeam": {
+        "id": 501,
+        "name": "Example Home FC",
+        "shortName": "Home",
+        "tla": "EXH",
+        "crest": null
+      },
+      "awayTeam": {
+        "id": 502,
+        "name": "Example Away FC",
+        "shortName": "Away",
+        "tla": "EXA",
+        "crest": null
+      },
+      "score": {
+        "winner": null,
+        "duration": "REGULAR",
+        "fullTime": {
+          "home": null,
+          "away": null
+        },
+        "halfTime": {
+          "home": null,
+          "away": null
+        }
+      },
+      "venue": null,
+      "attendance": null
+    }
+  ]
+}

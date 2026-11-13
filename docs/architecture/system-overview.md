@@ -2,117 +2,135 @@
 
 ## Purpose and status
 
-This document fixes the proposed logical architecture of the Football Intelligence Platform: module boundaries, data flow, trust boundaries, and deployment shape. It is Phase 1 design only. No application code, database, schema, container, or provider integration exists; every component below is a proposal under evaluation, and no component may be described as implemented in product or investor material.
+This document fixes the architecture of the Football Intelligence Platform after Phase 2 and
+the Phase 3 data foundation.
 
-The architecture is optimised for evidence quality, not for feature count: a probability that cannot be reconstructed from stored inputs is treated as a defect. Technology names appear as candidates only; see [technology-decisions.md](technology-decisions.md).
+**Implemented in Phase 3:** a Python modular monolith with a read-only REST API, a SQLite
+database, Alembic migrations, a provider adapter with a raw-payload archive, normalisation,
+identity resolution, validation, a synchronisation engine, and automated tests.
+
+**Not implemented:** prediction or feature engines, ML models, explanations, a frontend,
+authentication, subscriptions, production deployment, PostgreSQL, Celery/Redis, and Docker.
+
+Live integration with a real provider is **not verified**: no account or credentials exist.
+The adapter is implemented against documented API v4 shapes and tested with synthetic
+payloads. See `docs/decisions/ADR-0004-provider-abstraction.md`.
+
+Technology adoption is recorded in ADR-0002; SQLite in ADR-0003. Long-term intelligence stages
+remain design intent and are labelled as such.
 
 ## System context
 
-| Actor | Interaction with the system | Structural consequence |
+| Actor | Interaction | Structural consequence |
 | --- | --- | --- |
-| Developer/operator | Runs ingestion and scoring, inspects failures, changes models, deploys, answers for correctness | Same small team; no dedicated ops function; few runtime components, strong local tooling |
-| Future end user | Reads fixture probabilities, explanations, and historical track record | Read-only public surface, explicit uncertainty, no live in-match product in early phases |
-| Data provider | Licensed HTTP APIs or bulk files for fixtures, results, lineups, historical statistics | Untrusted, rate-limited, schema-drifting input behind adapters; provider outage must not corrupt state |
-| Model runtime | Training and scoring processes executed by the operator on the same host | Versioned artifacts, deterministic inference, no training inside request path |
-| Upstream reference data | Competition, team, venue, and timezone identity | Entity ambiguity propagates into every statistic; resolution is a first-class module |
+| Developer/operator | Runs migrations, synchronisation, inspections, tests; owns correctness | One host, CLI-driven operations, no admin UI |
+| Future end user | Reads fixtures, results, statistics, and later probabilities | Read-only HTTP surface, explicit uncertainty |
+| Data provider | Licensed HTTP API, rate-limited, schema-drifting input | Adapter boundary, archive before parse, quarantine |
+| Background worker | Scheduled and manual provider synchronisation | Separate process, same codebase, single instance |
+| Upstream reference data | Countries, competitions, seasons, teams, fixtures | Internal identity separate from provider IDs |
 
-External dependencies: provider availability, licensing, and field semantics; host OS and Python runtime; clock and timezone database; object storage durability. Provider terms may restrict redistribution of raw data and derived statistics; see [security-principles.md](../security/security-principles.md).
+External dependencies: provider availability and licensing, Python runtime, host clock and
+timezone database, SQLite file durability.
 
-## Design constraints
+## Constraints
 
-- **Data first.** Correctness of stored history dominates every other property; a fast wrong answer is a failure.
-- **Reproducibility.** Each served probability must be reconstructable from archived inputs, recorded model version, and recorded configuration.
-- **Small team.** A single operator must be able to run, debug, and recover the whole system without distributed-systems tooling.
-- **Cost sensitivity.** One host, one relational database. No always-on analytics cluster, no GPU fleet, no managed stream processor.
-- **No premature distribution.** Microservices, event buses, Kubernetes, and multi-region deployment are excluded from the initial architecture; splitting is allowed only on measured pressure.
-- **Explainability and uncertainty are product requirements**, not presentation concerns.
+- **Data first.** Stored history and provenance outrank feature count.
+- **No invented data.** Missing remains missing; unknown remains unknown.
+- **Small team.** One operator must be able to run and recover the system.
+- **One host, one database, one worker.** No premature distribution.
+- **Reproducibility.** Every canonical row traces to a raw payload and a sync run.
+- **Provider independence.** Domain code never imports a vendor module.
 
-## Logical layers and pipeline
-
-Acquisition (adapters, scheduler, worker) → Storage (raw archive, historical store) → Intelligence (features, team/match models, prediction, calibration) → Decision (explanation, evaluation) → Delivery (API, presentation) → Operations (observability) spanning all layers.
+## Logical layers (Phase 3)
 
 ```
- providers ──► provider adapters ──► raw payload archive (immutable, content-addressed)
-                    │
-                    ▼
-             ingestion scheduler ──► background worker (locks, retries, job records)
-                    │
-                    ▼
-       normalization + entity resolution ──► quarantine (unresolved / invalid)
-                    │
-                    ▼
-          historical store (canonical, point-in-time queryable)
-            │                    │
-            ▼                    ▼
-      feature builder      evaluation & backtesting ◄── prediction snapshots + results
-            │
-            ▼
-   team intelligence + match intelligence
-            │
-            ▼
-   statistical prediction engine (deterministic) ──► ML engine (deferred, same contract)
-            │
-            ▼
-   probability calibration (versioned maps)
-            │
-            ▼
-   explanation engine (read-only over stored outputs)
-            │
-            ▼
-   API layer ──► presentation (deferred)
+ External provider
+        │
+        ▼
+ Provider adapter ──► raw archive (content-addressed files + raw_payloads)
+        │
+        ▼
+ Normalisation ──► validation ──► identity resolution ──► quarantine
+        │
+        ▼
+ Persistence (SQLite via SQLAlchemy) ──► change log + sync runs/errors
+        │
+        ▼
+ Read-only REST API (/api/v1)
 ```
 
-Module responsibilities and out-of-scope boundaries are defined in [components.md](components.md). This overview does not restate them.
+The worker and the API are two processes from one codebase. They share the database, not
+memory. The API never contacts the provider.
 
-## Background synchronization
+## Implemented runtime components
 
-All provider contact and all heavy computation happen in a worker process sharing the application codebase, never inside an HTTP request. The scheduler owns *when*; the worker owns *how*. Job classes: fixture discovery, result and lineup polling, historical backfill, feature recomputation, scoring runs, and evaluation runs. Each job run is recorded with start, end, outcome, counts, and error detail; dispatch is at-least-once, so handlers must be idempotent and safe to replay. A single-flight lock per job key prevents duplicate concurrent work. Retries use bounded backoff and then leave the job in a visible failed state for the operator.
+| Component | Responsibility | Status |
+| --- | --- | --- |
+| FastAPI application (`app.main`) | HTTP routing, validation, error envelope, OpenAPI | Implemented |
+| Configuration (`app.core.config`) | Environment-based settings, secret handling | Implemented |
+| Structured logging (`app.core.logging`) | JSON logs, request IDs, redaction | Implemented |
+| Database layer (`app.database`) | Engine, SQLite pragmas, sessions, unit of work | Implemented |
+| ORM models (`app.models`) | 17 canonical/operational tables | Implemented |
+| Repositories (`app.repositories`) | Read queries and pagination | Implemented |
+| Provider contract (`app.providers.base`) | Capability-declaring adapter interface | Implemented |
+| Reference adapter (`providers.adapters.football_data_org`) | API v4 parsing and endpoints | Implemented, live-unverified |
+| HTTP client (`providers.http`) | Timeouts, retries, backoff, rate limiting | Implemented |
+| Raw archive (`ingestion.raw_archive`) | Content-addressed payload storage | Implemented |
+| Normalisation (`app.normalization`) | Names, enums, UTC, season labels, metrics | Implemented |
+| Validation (`app.validation`) | Field, range, and consistency checks | Implemented |
+| Identity resolution (`app.ingestion.identity`) | Mapping → natural key → create; ambiguity quarantine | Implemented |
+| Ingestion (`app.ingestion.*`) | Competitions, teams, fixtures, results, statistics | Implemented |
+| Sync engine (`app.sync.engine`) | Run records, counts, status, error capture | Implemented |
+| Scheduler (`app.sync.scheduler`) | APScheduler single-worker periodic jobs | Implemented |
+| CLI (`app.cli`) | Manual sync, status, provider check | Implemented |
+| Tests (`apps/backend/tests`) | Unit, integration, data-quality, failure | Implemented, locally run |
 
-Scheduling frequency is per job class and configuration-driven; no intervals are fixed in Phase 1.
+## Deployment view (Phase 3)
 
-## Data flow: one fixture prediction
+One Linux host:
 
-1. The scheduler detects a fixture in the provider calendar within the active horizon and enqueues discovery plus subsequent polling jobs.
-2. The adapter fetches fixture, result, lineup, and statistics payloads; each response is written to the raw archive before parsing, with provider, URL, fetch timestamp, and content hash.
-3. Normalization validates the payload against an expected schema, maps provider entities to internal team/competition/player IDs, and either produces canonical records or quarantines the payload.
-4. The historical store upserts canonical records with validity intervals and provenance links; corrections append a new version.
-5. At a configured cutoff before kickoff, the feature builder computes a feature vector using only records available at that cutoff, and persists it with feature-definition version and lineage.
-6. Team and match intelligence derive strength, form, rest, and context estimates with explicit sample sizes and uncertainty.
-7. The statistical prediction engine maps the stored vector to outcome scores; the run records model version, config, and input snapshot.
-8. Calibration applies the versioned map for the relevant competition/segment, producing probabilities with intervals and calibration provenance.
-9. The API serves the prediction with model version, feature cutoff, data-completeness flags, and explanation assembled from stored intermediates by the explanation engine.
-10. After the match, results are ingested and evaluation compares the stored pre-kickoff snapshot to the outcome. The snapshot is never edited; metrics and reliability curves accumulate per segment.
+- one Python virtual environment;
+- one SQLite database file (configurable path);
+- one API process (`uvicorn app.main:app`);
+- one optional worker process (`python -m app.worker`);
+- a local directory for raw payloads.
 
-## Deployment view
-
-Conceptually: one Linux host, one deployable application image or virtualenv (API + modules), one worker process from the same codebase, one PostgreSQL instance, and object storage for raw payloads (local filesystem acceptable initially). A reverse proxy terminates TLS. This is a logical sketch; hosting, backups, and hardening are undecided. No message broker is required, no service mesh, no Kubernetes, no multi-region.
+No reverse proxy, container, managed database, or message broker is required for local
+operation. The deployment document states the missing production controls.
 
 ## Trust boundaries
 
-| Boundary | Crossing | Control direction |
+| Boundary | Crossing | Control |
 | --- | --- | --- |
-| Provider → adapter | Untrusted payloads, credentials in transit | Schema validation, size limits, quarantine; failures never partially applied |
-| Adapter/worker → database | Trusted internal writes | Least-privilege role, transactions, constraints, append-only corrections |
-| API → end user | Untrusted requests | Read-only endpoints, validation, rate limiting, no internal error detail |
-| Operator → system | Privileged actions | Audited commands, no ad-hoc production SQL as normal workflow |
-| Model artifacts → prediction | Versioned inputs | Checksums, recorded version, promotion review; artifact swap is a deployment event |
+| Provider → HTTP client | Untrusted bytes, credentials | TLS, timeout, size limits, header-only token, redacted logs |
+| HTTP client → archive | Untrusted body persisted | Content hash, path confinement, no execution |
+| Archive → adapter | Untrusted JSON | Structural validation, typed DTOs, unknown enum rejection |
+| Adapter → domain | Normalised data | Explicit translation, no vendor objects |
+| Domain → database | Internal writes | Constraints, transactions, single writer |
+| API → client | Untrusted requests | Read-only, validated parameters, bounded pages, generic errors |
+| Operator → system | Privileged actions | Host access, CLI, no unauthenticated write API |
 
-Provenance records that data *came from* a source; it does not certify the source is correct. Provider errors propagate as visible uncertainty, not silent smoothing.
+## Data flow (one fixture)
 
-## What is explicitly not decided yet
+1. The scheduler or CLI starts a run; a `data_sync_runs` row is committed as `running`.
+2. The HTTP client requests a match list within a bounded date range, respecting the rate limiter.
+3. The body is written to the raw archive and a `raw_payloads` row records the observation.
+4. The adapter parses documented fields into internal DTOs.
+5. Normalisation maps statuses, stages, names, times, and metric keys.
+6. Validation rejects malformed or inconsistent records.
+7. Identity resolution finds the internal competition, season, teams, and match, or creates them.
+8. Persistence upserts the fixture and, for final statuses, the result; changed fields append to
+   `match_change_log`.
+9. The run finalises with counts and status; errors and quarantined records stay visible.
+10. The API serves the stored fixture, result, and available statistics with timestamps.
 
-- Relational schema, table ownership details, and feature storage shape (wide table vs normalised facts).
-- Queue/broker choice, retry budgets, and lock implementation.
-- Provider selection, licensing terms, coverage, and redistribution rights.
-- Model families, feature set, calibration method, and uncertainty representation.
-- Authentication mechanism, hosting provider, backup/retention policy.
-- API contract and versioning; latency, freshness, and availability targets (see [quality-attributes.md](quality-attributes.md)).
-- Whether market/odds data is used; if so, its ex-ante availability requires proof — UNVERIFIED.
+## What remains future work
 
-## Related documents
+- Feature construction and point-in-time feature tables.
+- Team/match strength models, statistical prediction, calibration, evaluation.
+- Explanations and any LLM-assisted wording over verified outputs.
+- Frontend, authentication, subscriptions, public deployment.
+- PostgreSQL migration, multi-worker scheduling, caching.
+- Lineups, events, players, injuries, odds.
 
-- [architecture-principles.md](architecture-principles.md) — binding principles and review criteria.
-- [components.md](components.md) — component catalogue, contracts, failure modes.
-- [technology-decisions.md](technology-decisions.md) — candidate technologies and adoption triggers.
-- [quality-attributes.md](quality-attributes.md) — scenarios, trade-offs, measurement gaps.
-- [ADR-0001](../decisions/ADR-0001-project-foundation.md), [system-design rules](../../rules/system-design-rules.md), [data rules](../../rules/data-rules.md), [engineering rules](../../rules/engineering-rules.md).
+These are not claimed as implemented anywhere in the repository.

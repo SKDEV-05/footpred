@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Runtime data
+data/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Raw provider payloads are evidence, not source; keep them out of version control
+data/raw/
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store
+
+# Logs
+*.log
