@@ -195,8 +195,8 @@ idempotent. One worker only, because the rate limit is per process and SQLite ha
 ### DEC-017 — Pure offline synthetic-test-only intelligence boundary
 
 **Date:** 2026-11-14
-**Status:** Approved by developer; implemented. Phase 4 final audit written
-(`docs/research/phase-4-final-audit.md`); independent sign-off and developer acceptance pending.
+**Status:** Approved by developer; implemented. Phase 4 accepted 2026-11-14 (DEC-018);
+independent sign-off was not obtained.
 **Decision:** Phase 4 consists of deterministic, pure-Python descriptive intelligence,
 point-in-time features, supplied-parameter Poisson/Dixon-Coles/Elo primitives, probability
 arithmetic, and evaluation mechanics. Inputs and outputs are explicitly synthetic test data.
@@ -208,6 +208,53 @@ separate approval. The ADR was amended (not rewritten) on 2026-11-14 after indep
 found that a normalized truncated matrix silently conditioned markets; explicit overflow
 categories now replace renormalization.
 **ADR:** `docs/decisions/ADR-0009-pure-offline-intelligence-boundary.md`.
+
+### DEC-018 — Phase 4 accepted; Phase 5 entry gates stay closed
+
+**Date:** 2026-11-14
+**Status:** Approved by developer (Phase 4 acceptance). Phase 5 not approved.
+**Decision:** The developer explicitly accepted Phase 4 as delivered: offline,
+synthetic-test-only, with its documented limitations and no real-world performance claim.
+Phase 3 acceptance is withheld pending independent QA and security review. Provider selection
+starts with a read-only evaluation, not a purchase. Intended use includes **public display**, so
+a display/redistribution licence must be verified before any provider-derived data is shown.
+**Reason:** Acceptance of the mathematics and software boundary is separate from evidence of
+football coverage, licensing, and provider reliability. Treating them as one decision would
+allow an interface to imply readiness that the data does not support.
+**Consequence:** Phase 5 remains blocked until the Phase 3 review, provider/plan/coverage
+decision, licence confirmation, and a recorded live verification are complete. Accepting
+Phase 4 authorises no fitting, real prediction, persistence, API, or frontend work.
+**Reference:** `docs/research/phase-4-final-audit.md`,
+`docs/decisions/ADR-0008-phase-4-5-entry-gates.md`.
+
+### DEC-019 — Phase 5 provider gate remains unresolved after read-only evaluation
+
+**Date:** 2026-11-14
+**Status:** Research complete; no provider selected and no procurement authorised.
+**Decision:** Record the provider comparison in
+`docs/research/2026-11-14-provider-evaluation.md`. football-data.org is the first bounded
+verification candidate because the existing adapter can be exercised end to end; it is not a
+global-coverage recommendation. Sportmonks is the breadth alternative, and Sportradar is the
+documented global-reach candidate, but pricing/licensing/entitlement remain unverified.
+**Reason:** Public display is intended, so endpoint documentation and marketing coverage are
+not sufficient. Named competition/season entitlement, rate limits, history, missing-data
+behaviour, and public-display rights require authorised evidence.
+**Consequence:** No provider call, account, purchase, credential, or coverage-matrix row is
+permitted yet. The developer must approve spend/contact and resolve the public-display licence
+before live verification.
+
+### DEC-020 — Phase 3 security exposure condition
+
+**Date:** 2026-11-14
+**Status:** Independent static review completed; acceptance with conditions for private use.
+**Decision:** Accept the Phase 3 backend only for private, loopback-only operation subject to
+the findings in `docs/reports/phase-3-security-review.md`; reject public/shared-network/live
+provider exposure until the major conditions are addressed.
+**Reason:** The review found no secret-handling blocker or write route, but identified raw sync
+error exposure, post-download response-size enforcement, absent auth/rate limits, archive
+integrity/retention gaps, and provider-boundary validation gaps.
+**Consequence:** Phase 3 acceptance remains withheld pending independent QA and remediation or
+explicit risk acceptance. This decision authorises no Phase 5 implementation.
 
 ---
 
@@ -285,4 +332,5 @@ prerequisites.
 DEC-017 remains in force and its ADR-0009 was amended, not replaced, to record the
 overflow/mass-conservation correction. No Phase 5 work was performed: no fitting, calibration,
 real prediction, persistence, schema change, migration, API endpoint, provider call, frontend,
-or new dependency. Phase 4 acceptance and independent sign-off are still pending.
+or new dependency. Phase 4 acceptance and independent sign-off were still pending at that
+point; the developer subsequently accepted Phase 4 in DEC-018 without an independent sign-off.

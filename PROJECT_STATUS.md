@@ -2,9 +2,9 @@
 
 **Project:** Football Intelligence Platform
 **Current phase:** Phase 4 — Offline synthetic-test-only intelligence foundation
-**Phase 4:** Implemented and self-audited for synthetic-test-only use; independent sign-off and
-developer acceptance pending
-**Phase 5:** Not approved
+**Phase 4:** Accepted by the developer on 2026-11-14 as an offline, synthetic-test-only
+foundation
+**Phase 5:** Not approved; entry gates pending
 **Last updated:** 2026-11-14
 
 ## Phase summary
@@ -14,7 +14,7 @@ developer acceptance pending
 | 1 | Foundation: instructions, agents, skills, commands, docs, rules, memory | Complete |
 | 2 | System architecture: stack, database, provider abstraction, API, identity, sync | Complete |
 | 3 | Python backend, SQLite schema, ingestion, read-only API, tests, guides | Delivered; reviews blocked, live provider unverified |
-| 4 | Offline intelligence, mathematical primitives, evaluation mechanics | **Implemented; synthetic-only; final audit written, independent sign-off pending** |
+| 4 | Offline intelligence, mathematical primitives, evaluation mechanics | **Accepted by developer (synthetic-only); Phase 3 review pending** |
 | 5 | Fitted prediction system, persistence/API, frontend | **Not started; not approved** |
 
 Status vocabulary for deliverables: **VERIFIED**, **IMPLEMENTED BUT NOT LIVE-VERIFIED**,
@@ -43,7 +43,9 @@ Status vocabulary for deliverables: **VERIFIED**, **IMPLEMENTED BUT NOT LIVE-VER
 | API | Read-only `/api/v1`, filters, pagination, error envelope, UTC | VERIFIED |
 | Tests | 124 Phase 3 unit/integration tests (58 unit + 66 integration) passing locally; full suite is 208 | VERIFIED (local run) |
 | Provenance / freshness | Archive and run metadata exist; exact replay and dataset freshness incomplete | PARTIALLY IMPLEMENTED |
-| Independent QA/security reviews | Both attempts failed at the tool usage limit; no findings returned | BLOCKED |
+| Independent QA review | Attempted; reviewer stopped at provider usage limit before producing findings | BLOCKED |
+| Independent security review | Static review: ACCEPT WITH CONDITIONS for private loopback-only use; reject public exposure | PARTIALLY IMPLEMENTED |
+| Provider evaluation | Read-only comparison completed; no entitlement or licence approved | IMPLEMENTED BUT NOT VERIFIED |
 | Live provider integration | Real credential, coverage, statistics, licence | **BLOCKED** |
 | Coverage guarantee | Any competition or season | **NOT IMPLEMENTED** (matrix empty by design) |
 | API auth / rate limiting | — | **NOT IMPLEMENTED** |
@@ -115,24 +117,30 @@ developer sign-off.
 | PD-004 | Data budget / plan | Pricing, quota, and history depth remain unverified |
 | LIM-006 | Display/redistribution licence | Public data display is blocked |
 | — | Provider credentials | All live verification is blocked |
-| — | Independent Phase 4 sign-off | The audit is self-produced; delegated reviews were partial |
+| — | Phase 3 independent QA review | Attempt blocked by provider usage limit; acceptance withheld |
+| — | Phase 3 security conditions | S-01…S-19; public exposure rejected until addressed |
+| — | Provider evaluation and selection | Research complete; licence and coverage remain unverified |
 
 No paid subscription was purchased, no provider account was created, and no provider terms were
 accepted on the developer's behalf.
 
 ## Next
 
-1. Restore review access or obtain human QA/security review; no independent approval exists.
-2. Developer review of Phases 2 and 3.
-3. Address the recorded data-integrity/transport gaps and decide provider, plan, competitions,
-   and licence position before an authorised live verification.
-4. Review [`docs/research/phase-4-final-audit.md`](docs/research/phase-4-final-audit.md),
-   confirm or amend the Phase 4 findings, and obtain independent sign-off.
-5. Do not begin Phase 5 without explicit approval.
+1. Obtain an independent Phase 3 QA review; the attempted review was blocked by the provider
+   usage limit and produced no findings.
+2. Review and remediate or explicitly risk-accept the security findings S-01…S-19 before any
+   public/shared-network exposure.
+3. Decide provider, plan, competitions, seasons, and the public-display licence using the
+   completed provider evaluation.
+4. Record one bounded live verification and populate the coverage matrix with evidence.
+5. Resolve or explicitly accept the data-integrity/transport gaps (GAP-013…GAP-020).
+6. Do not begin Phase 5 implementation until every entry gate in ADR-0008 passes.
 
 Reports: [A — Phase 2](docs/reports/phase-2-architecture-report.md),
 [B — Phase 3](docs/reports/phase-3-implementation-report.md), and
-[C — Phase 4 audit](docs/research/phase-4-final-audit.md).
+[C — Phase 4 audit](docs/research/phase-4-final-audit.md),
+[Phase 3 security review](docs/reports/phase-3-security-review.md), and
+[provider evaluation](docs/research/2026-11-14-provider-evaluation.md).
 
 See [`memory/next-steps.md`](memory/next-steps.md) and
 [`memory/known-limitations.md`](memory/known-limitations.md).

@@ -2,9 +2,11 @@
 
 **Last updated:** 2026-11-14
 **Phase:** 4 — Offline synthetic-test-only intelligence foundation
-**Status:** Implemented; Phase 4 final audit written
-(`docs/research/phase-4-final-audit.md`). Independent sign-off and developer acceptance
-pending. Phase 3 acceptance and live provider integration remain pending.
+**Status:** Phase 4 accepted by the developer as an offline, synthetic-test-only foundation.
+Phase 3 acceptance is withheld pending independent QA review. The independent security review
+returned **ACCEPT WITH CONDITIONS** for private loopback-only use and rejects public exposure in
+the current state. The read-only provider evaluation is complete, but no provider entitlement,
+licence, or live coverage is verified. Phase 5 is **not approved**.
 
 ## Completed
 
@@ -71,6 +73,10 @@ pending. Phase 3 acceptance and live provider integration remain pending.
 - API exercised through `TestClient`; no load, soak, or long-running server test.
 - **No live provider call was made.** No token or account exists.
 - No Phase 4 database write, migration, or schema change exists.
+- Provider evaluation: `docs/research/2026-11-14-provider-evaluation.md`; recommendation is
+  conditional football-data.org verification, explicitly not a global-coverage decision.
+- Security review: `docs/reports/phase-3-security-review.md`; public exposure is rejected
+  until its conditions are addressed.
 
 ## Structure
 
@@ -96,14 +102,18 @@ memory/  rules/
 
 ## Current blockers
 
+- Phase 3 independent QA review: blocked by provider usage limit; acceptance is withheld.
+- Phase 3 security: public exposure blocked by S-01…S-19; private loopback-only use accepted
+  with conditions.
 - Provider credentials: none configured; live verification is **BLOCKED**.
-- Provider selection, plan, competition coverage, and licence: pending developer decisions.
-- Public display of provider-derived data: unresolved (`LIM-006`).
-- Independent Phase 4 sign-off: the final audit is written by the implementing agent;
-  delegated reviews were partial. Self-review is not acceptance.
+- Provider selection, plan, competition coverage, and licence: evaluation completed as research;
+  developer decision and authorised verification remain pending.
+- Public display is intended, so a display/redistribution licence must be confirmed before any
+  provider-derived data is shown (`LIM-006`, PD-009).
 - Remaining integrity/transport gaps: `memory/known-limitations.md`, GAP-013 onward.
 
 ## Next
 
-Obtain developer review of `docs/research/phase-4-final-audit.md`, then independent sign-off
-and explicit Phase 4 acceptance. Phase 5 remains unapproved. See `memory/next-steps.md`.
+Complete the Phase 3 reviews and the provider evaluation, then decide provider, plan,
+competitions, and licence. Record one live verification and populate the coverage matrix before
+Phase 5 implementation is considered. Phase 5 remains unapproved. See `memory/next-steps.md`.

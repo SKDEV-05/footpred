@@ -1,7 +1,6 @@
 # Next Steps
 
-**Phase 4 offline synthetic-only implementation is complete and self-audited; independent
-sign-off and developer acceptance are pending.** Its boundary is
+**Phase 4 is accepted by the developer (DEC-018); Phase 5 is not approved.** Its boundary is
 [ADR-0009](../docs/decisions/ADR-0009-pure-offline-intelligence-boundary.md) and its audit is
 [docs/research/phase-4-final-audit.md](../docs/research/phase-4-final-audit.md).
 Do not begin Phase 5 model fitting, real predictions, persistence/API work, frontend, auth,
@@ -9,14 +8,19 @@ or deployment without explicit developer approval.
 
 ## Immediate next action
 
-1. Developer review of `docs/research/phase-4-final-audit.md` and the Phase 4 status table.
-2. Obtain independent QA/security sign-off on the audit; delegated reviews were partial and
-   self-review is not acceptance.
-3. Accept, amend, or reject Phase 4 explicitly before any Phase 5 discussion.
+Phase 4 is accepted (DEC-018). Three entry gates remain before Phase 5 implementation:
 
-Then, for the Phase 3 foundation on which Phase 4 depends:
+1. Obtain an independent Phase 3 QA review; the attempted review was blocked by the provider
+   usage limit and produced no findings.
+2. Review the completed security report and remediate or explicitly risk-accept S-01…S-19
+   before any public/shared-network exposure.
+3. Decide provider, plan, competitions, seasons, and the public-display licence using the
+   completed provider evaluation.
+4. Record one bounded live verification and populate the coverage matrix with evidence.
 
-Developer review of Phases 2 and 3:
+Do not propose Phase 5 implementation until those gates pass.
+
+## Phase 3 foundation review
 
 1. Read `PROJECT_STATUS.md`, `memory/current-state.md`, and the two phase reports.
 2. Review the architecture decisions (ADR-0002 … ADR-0007) and the stack/database choice.
@@ -46,8 +50,8 @@ Developer review of Phases 2 and 3:
       overlap, centralized synthetic enforcement, reproducible config metadata, numeric caps.
 - [x] 84 Phase 4 tests; full suite 208 passed locally; `compileall` exit 0.
 - [x] Final audit written at `docs/research/phase-4-final-audit.md`.
-- [ ] Independent QA/security sign-off on the audit.
-- [ ] Developer acceptance or amendment of Phase 4.
+- [x] Developer acceptance of Phase 4 (DEC-018, 2026-11-14).
+- [ ] Independent QA/security sign-off on the Phase 4 audit (not obtained; acceptance recorded).
 - [ ] Reproduce the 208-test run outside the implementing agent's environment.
 
 ## Live verification (requires approval and credentials)

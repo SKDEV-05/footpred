@@ -5,8 +5,9 @@ predictions, but to publish *explainable, reproducible, evaluated* ones: reliabl
 historical performance, mathematically grounded probability estimates, and an honest statement
 of uncertainty.
 
-> **Status: Phase 4 offline intelligence implemented; final audit written.** The Phase 3
-> backend remains live-unverified. Phase 4 adds synthetic-test-only descriptive intelligence,
+> **Status: Phase 4 offline intelligence accepted; Phase 5 entry gates remain blocked.** The
+> Phase 3 backend remains unaccepted pending independent QA; security review permits private
+> loopback-only use but rejects public exposure in its current state. Phase 4 adds synthetic-test-only descriptive intelligence,
 > probability mathematics, and evaluation mechanics. It is not a fitted model and makes no
 > real prediction or accuracy claim. Phase 5, frontend, authentication, and deployment do not
 > exist. No live provider call has been made.
@@ -118,6 +119,8 @@ User experience second. Visual decoration last.**
 - Report A: [`Phase 2 architecture`](docs/reports/phase-2-architecture-report.md)
 - Report B: [`Phase 3 implementation`](docs/reports/phase-3-implementation-report.md)
 - Report C: [`Phase 4 final audit`](docs/research/phase-4-final-audit.md)
+- Phase 3 security review: [`security review`](docs/reports/phase-3-security-review.md)
+- Provider evaluation: [`2026-11-14 provider evaluation`](docs/research/2026-11-14-provider-evaluation.md)
 - Next steps: [`memory/next-steps.md`](memory/next-steps.md)
 
 ## Phase boundaries

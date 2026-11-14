@@ -26,13 +26,13 @@ The platform must never promise guaranteed outcomes or a fixed accuracy figure.
 
 ## 3. Current phase
 
-**Phase 4 — Offline synthetic-test-only intelligence foundation. Status: implemented; final
-audit written, independent sign-off pending.** Phase 3 remains delivered with acceptance and
-live verification pending.
+**Phase 4 — Offline synthetic-test-only intelligence foundation. Status: accepted by the
+developer.** Phase 3 acceptance is withheld pending independent QA and security review.
+Phase 5 is **not approved**; its entry gates remain closed. No live provider call has been
+made and no coverage is verified.
 Phase 4 adds pure descriptive intelligence, point-in-time features, mathematical probability
 primitives, and evaluation mechanics. It has no database/API/provider integration and makes no
-real prediction or performance claim. No live provider call has been made and no coverage is
-verified.
+real prediction or performance claim.
 
 See `PROJECT_STATUS.md` and `memory/current-state.md`.
 

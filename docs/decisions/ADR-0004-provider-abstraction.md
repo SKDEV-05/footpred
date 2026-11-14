@@ -3,7 +3,8 @@
 **Status:** Proposed — reference adapter implemented; live integration not verified.
 **Date:** 2026-11-13
 **Owners:** data-engineer, backend-architect
-**Related:** `docs/data/provider-integration.md`, `docs/research/2026-11-13-football-data-org-api.md`
+**Related:** `docs/data/provider-integration.md`, `docs/research/2026-11-13-football-data-org-api.md`,
+[`2026-11-14-provider-evaluation.md`](../research/2026-11-14-provider-evaluation.md)
 
 ## Context
 

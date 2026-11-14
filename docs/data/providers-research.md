@@ -92,5 +92,7 @@ StatsBomb Open Data is event-level and research-oriented. That makes it useful f
 - [Data strategy](data-strategy.md)
 - [Data quality](data-quality.md)
 - [Data provenance](data-provenance.md)
+- [Provider evaluation — 2026-11-14](../research/2026-11-14-provider-evaluation.md)
+- [ADR-0004 — provider abstraction](../decisions/ADR-0004-provider-abstraction.md)
 - [`../../rules/data-rules.md`](../../rules/data-rules.md)
 - [`../../AGENTS.md`](../../AGENTS.md)
