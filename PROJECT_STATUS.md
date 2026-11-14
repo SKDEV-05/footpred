@@ -1,8 +1,10 @@
 # Project Status
 
 **Project:** Football Intelligence Platform
-**Current phase:** Phase 3 — Data foundation backend (delivered; acceptance pending)
-**Phase 4:** Not started; requires explicit developer approval
+**Current phase:** Phase 4 — Offline synthetic-test-only intelligence foundation
+**Phase 4:** Implemented and self-audited for synthetic-test-only use; independent sign-off and
+developer acceptance pending
+**Phase 5:** Not approved
 **Last updated:** 2026-11-14
 
 ## Phase summary
@@ -12,7 +14,8 @@
 | 1 | Foundation: instructions, agents, skills, commands, docs, rules, memory | Complete |
 | 2 | System architecture: stack, database, provider abstraction, API, identity, sync | Complete |
 | 3 | Python backend, SQLite schema, ingestion, read-only API, tests, guides | Delivered; reviews blocked, live provider unverified |
-| 4 | Prediction engine, evaluation, frontend, deployment | **Not started** |
+| 4 | Offline intelligence, mathematical primitives, evaluation mechanics | **Implemented; synthetic-only; final audit written, independent sign-off pending** |
+| 5 | Fitted prediction system, persistence/API, frontend | **Not started; not approved** |
 
 Status vocabulary for deliverables: **VERIFIED**, **IMPLEMENTED BUT NOT LIVE-VERIFIED**,
 **PARTIALLY IMPLEMENTED**, **NOT IMPLEMENTED**, **BLOCKED**.
@@ -38,7 +41,7 @@ Status vocabulary for deliverables: **VERIFIED**, **IMPLEMENTED BUT NOT LIVE-VER
 | Scheduler / worker | Wiring inspected; invalid startup tested, successful scheduling unverified | IMPLEMENTED BUT NOT LIVE-VERIFIED |
 | CLI | `migrate`, `status`, `check-provider`, `sweep-runs`, `sync <job>` | VERIFIED |
 | API | Read-only `/api/v1`, filters, pagination, error envelope, UTC | VERIFIED |
-| Tests | 124 unit/integration tests passing locally | VERIFIED (local run) |
+| Tests | 124 Phase 3 unit/integration tests (58 unit + 66 integration) passing locally; full suite is 208 | VERIFIED (local run) |
 | Provenance / freshness | Archive and run metadata exist; exact replay and dataset freshness incomplete | PARTIALLY IMPLEMENTED |
 | Independent QA/security reviews | Both attempts failed at the tool usage limit; no findings returned | BLOCKED |
 | Live provider integration | Real credential, coverage, statistics, licence | **BLOCKED** |
@@ -46,7 +49,12 @@ Status vocabulary for deliverables: **VERIFIED**, **IMPLEMENTED BUT NOT LIVE-VER
 | API auth / rate limiting | — | **NOT IMPLEMENTED** |
 | Backup automation | — | **NOT IMPLEMENTED** |
 | PostgreSQL support | — | **NOT IMPLEMENTED** (not supported) |
-| Prediction / ML / frontend | — | **NOT IMPLEMENTED** (Phase 4) |
+| Offline team/match intelligence | Pure descriptive metrics and reports | VERIFIED (synthetic tests only) |
+| Feature engineering | Point-in-time, versioned features and provenance IDs | VERIFIED (synthetic tests only) |
+| Probability primitives | Supplied-rate Poisson and Dixon-Coles score matrices | VERIFIED mathematically; NOT REAL-WORLD VALIDATED |
+| Elo primitive | Deterministic sequential supplied-policy rating updates | VERIFIED mathematically; NOT REAL-WORLD VALIDATED |
+| Evaluation mechanics | Brier/log loss, reliability bins, rolling-origin folds | VERIFIED mathematically; no historical run |
+| Prediction fitting / calibration / frontend | — | **NOT IMPLEMENTED** (Phase 5) |
 
 ## Verification evidence
 
@@ -55,7 +63,8 @@ Earlier CLI refusal/sweep checks were executed on 2026-11-13.
 
 | Check | Result |
 | --- | --- |
-| `PYTHONPATH=apps/backend .venv/bin/python -m pytest` | 124 passed, 1 third-party deprecation warning |
+| `PYTHONPATH=apps/backend .venv/bin/python -m pytest` | 208 passed, 1 third-party deprecation warning |
+| Phase 4 intelligence tests | 84 passed |
 | `python -m compileall` over application, migrations, tests | Exit 0 |
 | `python -m app.cli migrate` on a scratch database | Created all 17 tables plus `alembic_version` |
 | `alembic check` | No drift between models and migrated schema |
@@ -67,7 +76,8 @@ Earlier CLI refusal/sweep checks were executed on 2026-11-13.
 | Provider | **No live call was made**; no token exists |
 
 The test suite uses synthetic payloads labelled `SYNTHETIC TEST DATA`. A passing suite is not
-evidence of provider compatibility.
+evidence of provider compatibility, and the Phase 4 tests are not evidence of football accuracy,
+calibration, or predictive usefulness.
 
 ## Architecture decisions
 
@@ -80,14 +90,16 @@ evidence of provider compatibility.
 | ADR-0005 | Read-only API contract | Proposed — implemented |
 | ADR-0006 | Identity and provenance | Proposed — implemented |
 | ADR-0007 | Synchronisation model | Proposed — implemented |
+| ADR-0008 | Phase 4/5 entry gates | Approved — gates partly unmet |
+| ADR-0009 | Pure offline intelligence boundary | Approved — implemented, amended after review |
 
 "Proposed — implemented" means the code exists and is tested, but the decision still needs
 developer sign-off.
 
 ## Deliberately not built
 
-- Prediction model, probability engine, features, backtests, evaluation harness.
-- Machine learning, LLM analysis, generated explanations.
+- Fitted or calibrated prediction model, real historical backtest, performance claim.
+- Prediction persistence, write API, machine learning, LLM analysis, generated explanations.
 - Frontend, UI components, design system.
 - Authentication, authorisation, subscriptions, payments, betting.
 - Live-score push, news, notifications.
@@ -103,6 +115,7 @@ developer sign-off.
 | PD-004 | Data budget / plan | Pricing, quota, and history depth remain unverified |
 | LIM-006 | Display/redistribution licence | Public data display is blocked |
 | — | Provider credentials | All live verification is blocked |
+| — | Independent Phase 4 sign-off | The audit is self-produced; delegated reviews were partial |
 
 No paid subscription was purchased, no provider account was created, and no provider terms were
 accepted on the developer's behalf.
@@ -113,10 +126,13 @@ accepted on the developer's behalf.
 2. Developer review of Phases 2 and 3.
 3. Address the recorded data-integrity/transport gaps and decide provider, plan, competitions,
    and licence position before an authorised live verification.
-4. Only then consider Phase 4.
+4. Review [`docs/research/phase-4-final-audit.md`](docs/research/phase-4-final-audit.md),
+   confirm or amend the Phase 4 findings, and obtain independent sign-off.
+5. Do not begin Phase 5 without explicit approval.
 
 Reports: [A — Phase 2](docs/reports/phase-2-architecture-report.md),
-[B — Phase 3](docs/reports/phase-3-implementation-report.md).
+[B — Phase 3](docs/reports/phase-3-implementation-report.md), and
+[C — Phase 4 audit](docs/research/phase-4-final-audit.md).
 
 See [`memory/next-steps.md`](memory/next-steps.md) and
 [`memory/known-limitations.md`](memory/known-limitations.md).

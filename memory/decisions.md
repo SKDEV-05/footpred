@@ -192,6 +192,23 @@ not leave invisible work.
 idempotent. One worker only, because the rate limit is per process and SQLite has one writer.
 **ADR:** `docs/decisions/ADR-0007-synchronisation.md`.
 
+### DEC-017 — Pure offline synthetic-test-only intelligence boundary
+
+**Date:** 2026-11-14
+**Status:** Approved by developer; implemented. Phase 4 final audit written
+(`docs/research/phase-4-final-audit.md`); independent sign-off and developer acceptance pending.
+**Decision:** Phase 4 consists of deterministic, pure-Python descriptive intelligence,
+point-in-time features, supplied-parameter Poisson/Dixon-Coles/Elo primitives, probability
+arithmetic, and evaluation mechanics. Inputs and outputs are explicitly synthetic test data.
+There is no model fitting, real prediction, database/API/provider integration, or schema change.
+**Reason:** Establish mathematical and software correctness without manufacturing evidence from
+synthetic data or crossing the unresolved real-data boundary.
+**Consequence:** Real validation, persistence, APIs, and frontend remain Phase 5 work and require
+separate approval. The ADR was amended (not rewritten) on 2026-11-14 after independent review
+found that a normalized truncated matrix silently conditioned markets; explicit overflow
+categories now replace renormalization.
+**ADR:** `docs/decisions/ADR-0009-pure-offline-intelligence-boundary.md`.
+
 ---
 
 ## Rejected approaches
@@ -251,6 +268,21 @@ prediction path) remain in force.
 ## Close-out record — 2026-11-14
 
 No new architecture is approved by this close-out. Report A and Report B are in `docs/reports/`.
-Local verification is 124 passing tests plus a scratch migration/no-drift check. Independent
+Phase 3 local verification was 124 passing tests plus a scratch migration/no-drift check.
+Phase 4 local verification is 153 passing tests and successful compilation. Independent
 QA/security attempts both failed at the tool usage limit; acceptance is still pending. Remaining
 transport/data-integrity gaps are not approved exceptions (see `memory/known-limitations.md`).
+
+## Phase 4 finalization record — 2026-11-14
+
+Supersedes only the Phase 4 figures in the close-out record above; the Phase 3 statements stand.
+The full suite is now **208 passed** (58 Phase 3 unit + 66 integration + 84 Phase 4), with one
+third-party Starlette deprecation warning and `compileall` exit 0. The Phase 4 audit is
+`docs/research/phase-4-final-audit.md`, including components, methodology, synthetic
+restrictions, security review, test evidence, limitations, open questions, and Phase 5
+prerequisites.
+
+DEC-017 remains in force and its ADR-0009 was amended, not replaced, to record the
+overflow/mass-conservation correction. No Phase 5 work was performed: no fitting, calibration,
+real prediction, persistence, schema change, migration, API endpoint, provider call, frontend,
+or new dependency. Phase 4 acceptance and independent sign-off are still pending.

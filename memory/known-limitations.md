@@ -20,7 +20,12 @@ is discovered. Never remove an item silently; mark it resolved with the evidence
 | LIM-011 | No PostgreSQL verification; non-SQLite URLs fail closed | Portability is a design intention, not a property | Migration plan plus test evidence, if ever needed |
 | LIM-012 | No monitoring, alerting, dashboards, or metrics endpoint | Failures are visible only by inspecting logs and tables | Add before production |
 | LIM-013 | No secret manager integration | Credentials live in the process environment | Host-level control or a secret store before real use |
-| LIM-014 | Independent QA and security reviews attempted but both stopped at the tool usage limit (2026-11-14 close-out) | No independent findings or sign-off exist; acceptance is pending | Restore review access or arrange human review; do not treat self-checks as approval |
+| LIM-014 | Independent QA and security reviews attempted but both stopped at the tool usage limit (2026-11-14 close-out) | No independent findings or sign-off exist; acceptance is pending | Restore review access or arrange human review; do not treat self-checks or the Phase 4 audit as approval |
+| LIM-015 | Phase 4 uses only synthetic test fixtures and supplied parameters | It proves software/math behavior, not football accuracy, calibration, or usefulness | Licensed point-in-time history plus a frozen Phase 5 evaluation protocol |
+| LIM-016 | No fitted goal rates, Dixon-Coles rho, Elo policy, calibrator, or real sample policy exists | Mathematical outputs cannot be used as real predictions | Estimate and validate only after Phase 5 approval and verified data |
+| LIM-017 | Synthetic-data classification is caller-asserted inside `ResearchContext` | A deliberately mislabelled real dataset cannot be detected in-process | Enforce provenance at the persistence/ingestion boundary in Phase 5, not only in pure code |
+| LIM-018 | Phase 4 digests detect changed input but are not signatures or tamper-proof storage | Reproducibility is weaker than tamper-evidence | Add signing/immutability only with an approved persistence design |
+| LIM-019 | The 208-test figure is a local run by the implementing assistant, not an independent CI result | It is evidence of local passing, not external acceptance | Reproduce on a clean environment or in CI after approval |
 
 ## Implementation gaps
 
@@ -46,6 +51,12 @@ is discovered. Never remove an item silently; mark it resolved with the evidence
 | GAP-018 | Final-score validation derives the winner from full-time goals without a shootout-specific rule | A legitimate shootout winner with level full-time goals can be rejected; regulation/extra-time/shootout interpretation needs regression coverage |
 | GAP-019 | Statistics upsert does not invoke `validate_statistics`; invalid key `ValueError`s fail the job rather than quarantine. It resolves team mappings without verifying they match the fixture participants | Statistics boundary is only partially validated; review and regression tests required before accepting live statistics |
 | GAP-020 | HTTP errors and oversized responses are not archived; existing archive files are reused based on size without a digest recheck | Archive is not complete transport evidence or tamper-proof storage |
+| GAP-021 | Finite Poisson matrices represent scores above `K` as overflow categories, with an undecidable overflow-overflow cell | 1X2 must return bounds and derived markets are conditional on the finite representation |
+| GAP-022 | Intelligence features are descriptive and not opponent-strength adjusted or shrunk | Predictive usefulness and small-sample behavior are unknown |
+| GAP-023 | Evaluation mechanics do not fit calibration, create a final holdout, estimate uncertainty, or persist experiments | No real validation or reproducible experiment record exists |
+| GAP-024 | First-half, provider xG, lineup, injury, standings, tie-state, and competition-strength intelligence are omitted | Unsupported inputs cannot contribute to analysis |
+| GAP-025 | 1X2 and double chance are bounds because the overflow-overflow cell is undecidable; correct-score output excludes overflow categories | Consumers must not treat a bound midpoint as a point probability, and correct-score mass is intentionally partial |
+| GAP-026 | No confidence intervals, calibration fit, final-holdout execution, or persisted experiment exists | Evaluation code is mechanically tested, not exercised on history |
 
 ## Technical uncertainties
 
@@ -63,7 +74,9 @@ Resolved since the foundation phase: the worker mechanism (APScheduler, one proc
 primary database (SQLite) are decided and implemented.
 
 The close-out inspection above is by the implementing assistant, not an independent audit.
-GAP-013 onward are outstanding findings, not approved exceptions or completed fixes.
+GAP-013 onward are outstanding findings, not approved exceptions or completed fixes. The
+Phase 4 audit in `docs/research/phase-4-final-audit.md` is likewise self-produced; its
+"VERIFIED" labels mean verified against synthetic automated tests, not against real football.
 
 ## Data provider limitations
 
@@ -103,7 +116,9 @@ GAP-013 onward are outstanding findings, not approved exceptions or completed fi
 - Documentation quality depends on future verification; provider statements remain dated facts,
   not guarantees.
 - Memory can lag documentation if not updated with `/update-memory`.
-- The repository is not under version control; there are no commits, tags, or rollback points.
+- The repository is under git as of 2026-11-14 with `.gitignore` exclusions for secrets,
+  databases, and raw payloads. Phases 1–3 and the Phase 4 finalization are committed; there are
+  still no tags or release branches.
 
 ## Related documents
 

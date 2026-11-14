@@ -1,9 +1,20 @@
 # Next Steps
 
-**Phase 4 is not approved.** Do not begin prediction, ML, frontend, auth, or deployment work
-without explicit developer approval.
+**Phase 4 offline synthetic-only implementation is complete and self-audited; independent
+sign-off and developer acceptance are pending.** Its boundary is
+[ADR-0009](../docs/decisions/ADR-0009-pure-offline-intelligence-boundary.md) and its audit is
+[docs/research/phase-4-final-audit.md](../docs/research/phase-4-final-audit.md).
+Do not begin Phase 5 model fitting, real predictions, persistence/API work, frontend, auth,
+or deployment without explicit developer approval.
 
 ## Immediate next action
+
+1. Developer review of `docs/research/phase-4-final-audit.md` and the Phase 4 status table.
+2. Obtain independent QA/security sign-off on the audit; delegated reviews were partial and
+   self-review is not acceptance.
+3. Accept, amend, or reject Phase 4 explicitly before any Phase 5 discussion.
+
+Then, for the Phase 3 foundation on which Phase 4 depends:
 
 Developer review of Phases 2 and 3:
 
@@ -23,7 +34,21 @@ Developer review of Phases 2 and 3:
 - [ ] Independent review by QA and security specialists — both attempts blocked by tool usage
       limits; no review outcome exists. Restore access or arrange human review.
 - [ ] Developer sign-off.
-- [ ] Version control initialised with a `.gitignore` excluding `.env`, databases, and raw data.
+- [x] Version control initialised with a `.gitignore` excluding `.env`, databases, and raw data.
+
+## Phase 4 close-out checklist
+
+- [x] Pure offline package under `apps/backend/app/intelligence/` with no I/O surface.
+- [x] Descriptive metrics, point-in-time features, quality abstention, structured reports.
+- [x] Supplied-parameter Poisson, Dixon-Coles, Elo, and market arithmetic.
+- [x] Evaluation mechanics: proper scores, reliability, temporal folds, explicit partition.
+- [x] Blocking audit findings fixed: overflow categories, neutral-baseline exclusion, fold
+      overlap, centralized synthetic enforcement, reproducible config metadata, numeric caps.
+- [x] 84 Phase 4 tests; full suite 208 passed locally; `compileall` exit 0.
+- [x] Final audit written at `docs/research/phase-4-final-audit.md`.
+- [ ] Independent QA/security sign-off on the audit.
+- [ ] Developer acceptance or amendment of Phase 4.
+- [ ] Reproduce the 208-test run outside the implementing agent's environment.
 
 ## Live verification (requires approval and credentials)
 
@@ -42,7 +67,7 @@ Before starting: resolve or explicitly review the data-integrity and transport g
 
 Stop if a paid commitment, legal agreement, or unclear licence is required.
 
-## Phase 4 prerequisites (not started)
+## Phase 5 prerequisites (not started)
 
 - [ ] Developer approval of Phases 2/3.
 - [ ] Provider, plan, competitions, and licence decided.
@@ -89,7 +114,7 @@ Stop and ask the developer if:
 - licensing terms are ambiguous for the intended use;
 - required history is unavailable at usable quality;
 - a design requires a technology not approved;
-- work would cross into Phase 4 without explicit approval;
+- work would cross into Phase 5 without explicit approval;
 - a migration would destroy or rewrite stored data;
 - real provider data would be committed or published.
 

@@ -26,20 +26,23 @@ The platform must never promise guaranteed outcomes or a fixed accuracy figure.
 
 ## 3. Current phase
 
-**Phase 3 — Data foundation backend. Status: delivered; acceptance pending.**
-Independent QA/security reviews were blocked by a tool usage limit and remain required.
-Phases 1–3 produced instructions, agents, skills, commands, documentation, memory, rules, and a
-Python backend with a SQLite schema, provider adapter, ingestion pipeline, and read-only API.
-No prediction engine, ML model, frontend, authentication, or deployment exists. No live provider
-call has been made and no coverage is verified.
+**Phase 4 — Offline synthetic-test-only intelligence foundation. Status: implemented; final
+audit written, independent sign-off pending.** Phase 3 remains delivered with acceptance and
+live verification pending.
+Phase 4 adds pure descriptive intelligence, point-in-time features, mathematical probability
+primitives, and evaluation mechanics. It has no database/API/provider integration and makes no
+real prediction or performance claim. No live provider call has been made and no coverage is
+verified.
 
 See `PROJECT_STATUS.md` and `memory/current-state.md`.
 
 ## 4. Phase boundaries (hard)
 
-Until the developer explicitly approves Phase 4, agents must not:
+Until the developer explicitly approves Phase 5, agents must not:
 
-- implement a prediction engine, probability model, features, backtests, or evaluation harness;
+- fit, train, calibrate, or validate a prediction model on real football data;
+- make or publish a real-world match prediction or performance claim;
+- persist features or predictions, or modify the SQLite schema for them;
 - add machine learning training or an LLM analysis path;
 - create a frontend, UI components, or branding;
 - add authentication, authorisation, subscriptions, payments, or betting features;
@@ -50,6 +53,10 @@ Until the developer explicitly approves Phase 4, agents must not:
 - commit secrets, a real `.env`, or provider data whose licence is unclear;
 - seed the database with invented football data, or present synthetic data as real;
 - modify global OpenCode configuration or unrelated repositories.
+
+Approved Phase 4 work is limited by
+`docs/decisions/ADR-0009-pure-offline-intelligence-boundary.md`: offline, deterministic,
+synthetic-test-only calculations with no I/O. Phase 5 remains unapproved.
 
 If a task appears to require any of these, stop and request approval. Do not "helpfully"
 cross the boundary because the next step seems obvious.

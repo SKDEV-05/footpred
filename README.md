@@ -5,11 +5,13 @@ predictions, but to publish *explainable, reproducible, evaluated* ones: reliabl
 historical performance, mathematically grounded probability estimates, and an honest statement
 of uncertainty.
 
-> **Status: Phases 1–3 delivered; acceptance pending.** A Python backend, SQLite
-> schema, provider adapter, ingestion pipeline, and read-only API exist. There is no prediction
-> engine, ML model, frontend, authentication, or deployment. No live provider call has been made.
-> Independent QA/security reviews were blocked by the tool usage limit.
-> See [`PROJECT_STATUS.md`](PROJECT_STATUS.md).
+> **Status: Phase 4 offline intelligence implemented; final audit written.** The Phase 3
+> backend remains live-unverified. Phase 4 adds synthetic-test-only descriptive intelligence,
+> probability mathematics, and evaluation mechanics. It is not a fitted model and makes no
+> real prediction or accuracy claim. Phase 5, frontend, authentication, and deployment do not
+> exist. No live provider call has been made.
+> See [`PROJECT_STATUS.md`](PROJECT_STATUS.md) and the
+> [Phase 4 audit](docs/research/phase-4-final-audit.md).
 
 ## What this repository contains
 
@@ -17,13 +19,13 @@ of uncertainty.
 | --- | --- |
 | `AGENTS.md` | Root instructions for every AI agent working here |
 | `.opencode/` | Nine agents, twelve skills, six project commands |
-| `apps/backend/app/` | FastAPI backend: models, ingestion, sync, read-only API |
+| `apps/backend/app/` | FastAPI data backend plus pure offline `intelligence` package |
 | `apps/backend/migrations/` | Alembic environment and the initial schema revision |
 | `apps/backend/tests/` | Unit and integration suite (synthetic data only) |
 | `docs/architecture/` | System overview, components, database, API, data flow, deployment prep |
 | `docs/data/` | Provider integration, ingestion, normalisation, identity, sync, coverage matrix |
 | `docs/guides/` | Setup, configuration, migrations, provider setup, sync, testing, troubleshooting |
-| `docs/decisions/` | Architecture Decision Records (ADR-0001 … ADR-0007) |
+| `docs/decisions/` | Architecture Decision Records (ADR-0001 … ADR-0009) |
 | `docs/research/` | Dated research notes with verified facts and open questions |
 | `docs/product/`, `docs/football/`, `docs/design/`, `docs/security/` | Product, domain, design, security |
 | `memory/` | Concise current-state memory for humans and agents |
@@ -58,11 +60,13 @@ Full instructions: [`docs/guides/setup.md`](docs/guides/setup.md).
 - Missing data is represented as absence, never zero. Measured zero is stored as zero.
 - Sync runs, item errors, quarantine, and stale-run recovery.
 - Read-only `/api/v1` API with UTC timestamps, pagination limits, and one error envelope.
-- 124 unit and integration tests passing locally (2026-11-14 session).
+- Offline team/match metrics, point-in-time feature construction, quality/abstention,
+  Poisson, Dixon-Coles, Elo, market arithmetic, and evaluation mechanics.
+- 208 unit and integration tests passing locally (2026-11-14 session).
 
 ## What does not exist
 
-- Prediction engine, probability model, features, backtests, or evaluation.
+- Fitted prediction engine, trained model, calibration, or real historical backtest.
 - Machine learning, LLM analysis, or explanations.
 - Frontend, authentication, authorisation, subscriptions, betting, or user accounts.
 - Live provider verification. No account or token is configured, and coverage, pricing, quota,
@@ -109,14 +113,15 @@ User experience second. Visual decoration last.**
   [`configuration.md`](docs/guides/configuration.md) →
   [`running-sync.md`](docs/guides/running-sync.md) →
   [`troubleshooting.md`](docs/guides/troubleshooting.md)
-- Decisions: [`docs/decisions/`](docs/decisions/) (ADR-0001 … ADR-0007)
+- Decisions: [`docs/decisions/`](docs/decisions/) (ADR-0001 … ADR-0009)
 - Current gaps: [`memory/known-limitations.md`](memory/known-limitations.md)
 - Report A: [`Phase 2 architecture`](docs/reports/phase-2-architecture-report.md)
 - Report B: [`Phase 3 implementation`](docs/reports/phase-3-implementation-report.md)
+- Report C: [`Phase 4 final audit`](docs/research/phase-4-final-audit.md)
 - Next steps: [`memory/next-steps.md`](memory/next-steps.md)
 
 ## Phase boundaries
 
-Phases 1–3 produced documentation, a data foundation, and a read-only backend. Phase 4
-(prediction and evaluation) is not approved. Adding a prediction engine, ML, frontend,
-authentication, or deployment requires explicit developer approval.
+Phase 4 is limited to the pure offline boundary in ADR-0009. It does not authorise model
+fitting, real predictions, persistence, API endpoints, ML training, frontend,
+authentication, or deployment. Phase 5 requires explicit developer approval.

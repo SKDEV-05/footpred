@@ -1,8 +1,8 @@
 # Components
 
-**Status:** Phase 3 modules are implemented in `apps/backend/app/`. Future intelligence
-components are design-only and marked accordingly. Components are modules in one codebase, not
-services.
+**Status:** Phase 3 modules are implemented in `apps/backend/app/`. Phase 4 offline modules are
+implemented but synthetic-test-only. Fitting, persistence, delivery, and interface work remain
+design-only. Components are modules in one codebase, not services.
 
 ## 1. Module catalogue
 
@@ -26,11 +26,13 @@ services.
 | `sync.scheduler` | Periodic single-worker scheduling | schedule config | 3 | Implemented |
 | `cli` | Manual operations and operator status | none | 3 | Implemented |
 | `api.v1` | Read-only HTTP contract | none | 3 | Implemented |
-| Feature builder | Point-in-time feature vectors | feature tables | 4 | Not implemented |
-| Team/match intelligence | Strength, form, context estimates | derived tables | 4 | Not implemented |
-| Prediction and calibration | Deterministic probabilities and versioned maps | prediction tables | 4 | Not implemented |
-| Evaluation/backtesting | Proper scoring, reliability, segments | evaluation tables | 4 | Not implemented |
-| Explanation engine | Read-only reasons over stored outputs | explanation records | 4 | Not implemented |
+| Feature builder | Point-in-time descriptive features, no persistence | none | 4 | Implemented (synthetic-only) |
+| Team/match intelligence | Form, venue splits, context, H2H, quality | none | 4 | Implemented (synthetic-only) |
+| Statistical primitives | Poisson, Dixon-Coles, Elo, market arithmetic | none | 4 | Implemented (mathematically verified) |
+| Evaluation mechanics | Proper scores, reliability, temporal folds | none | 4 | Implemented (no historical run) |
+| Model fitting and calibration | Deterministic probabilities and versioned maps | prediction tables | 5 | Not implemented |
+| Prediction persistence/API | Stored, immutable prediction records | prediction tables | 5 | Not implemented |
+| Explanation engine | Read-only reasons over stored outputs | explanation records | 6 | Not implemented |
 | Frontend | Presentation | none | 5 | Not implemented |
 
 ## 2. Boundaries and dependency direction
