@@ -13,7 +13,7 @@ foundation
 | --- | --- | --- |
 | 1 | Foundation: instructions, agents, skills, commands, docs, rules, memory | Complete |
 | 2 | System architecture: stack, database, provider abstraction, API, identity, sync | Complete |
-| 3 | Python backend, SQLite schema, ingestion, read-only API, tests, guides | Delivered; reviews blocked, live provider unverified |
+| 3 | Python backend, SQLite schema, ingestion, read-only API, tests, guides | **QA FAIL; private development only with conditions; public/live exposure rejected** |
 | 4 | Offline intelligence, mathematical primitives, evaluation mechanics | **Accepted by developer (synthetic-only); Phase 3 review pending** |
 | 5 | Fitted prediction system, persistence/API, frontend | **Not started; not approved** |
 
@@ -43,8 +43,8 @@ Status vocabulary for deliverables: **VERIFIED**, **IMPLEMENTED BUT NOT LIVE-VER
 | API | Read-only `/api/v1`, filters, pagination, error envelope, UTC | VERIFIED |
 | Tests | 124 Phase 3 unit/integration tests (58 unit + 66 integration) passing locally; full suite is 208 | VERIFIED (local run) |
 | Provenance / freshness | Archive and run metadata exist; exact replay and dataset freshness incomplete | PARTIALLY IMPLEMENTED |
-| Independent QA review | Attempted; reviewer stopped at provider usage limit before producing findings | BLOCKED |
-| Independent security review | Static review: ACCEPT WITH CONDITIONS for private loopback-only use; reject public exposure | PARTIALLY IMPLEMENTED |
+| Independent QA review | **FAIL**; 208 local tests pass, but GAP-013…GAP-020 remain open | FAIL |
+| Independent security review | **ACCEPT WITH CONDITIONS** for private loopback-only use; **REJECT** public exposure | PARTIALLY IMPLEMENTED |
 | Provider evaluation | Read-only comparison completed; no entitlement or licence approved | IMPLEMENTED BUT NOT VERIFIED |
 | Live provider integration | Real credential, coverage, statistics, licence | **BLOCKED** |
 | Coverage guarantee | Any competition or season | **NOT IMPLEMENTED** (matrix empty by design) |
@@ -117,7 +117,7 @@ developer sign-off.
 | PD-004 | Data budget / plan | Pricing, quota, and history depth remain unverified |
 | LIM-006 | Display/redistribution licence | Public data display is blocked |
 | — | Provider credentials | All live verification is blocked |
-| — | Phase 3 independent QA review | Attempt blocked by provider usage limit; acceptance withheld |
+| — | Phase 3 independent QA review | FAIL; remediation required; acceptance withheld |
 | — | Phase 3 security conditions | S-01…S-19; public exposure rejected until addressed |
 | — | Provider evaluation and selection | Research complete; licence and coverage remain unverified |
 
@@ -126,20 +126,22 @@ accepted on the developer's behalf.
 
 ## Next
 
-1. Obtain an independent Phase 3 QA review; the attempted review was blocked by the provider
-   usage limit and produced no findings.
-2. Review and remediate or explicitly risk-accept the security findings S-01…S-19 before any
-   public/shared-network exposure.
+1. Remediate or explicitly risk-accept the QA findings F-01…F-10 and GAP-013…GAP-020.
+2. Remediate or explicitly risk-accept S-01…S-19; public/shared-network exposure remains
+   rejected.
 3. Decide provider, plan, competitions, seasons, and the public-display licence using the
    completed provider evaluation.
 4. Record one bounded live verification and populate the coverage matrix with evidence.
-5. Resolve or explicitly accept the data-integrity/transport gaps (GAP-013…GAP-020).
+5. Obtain a fresh independent QA/security review after remediation.
 6. Do not begin Phase 5 implementation until every entry gate in ADR-0008 passes.
 
 Reports: [A — Phase 2](docs/reports/phase-2-architecture-report.md),
 [B — Phase 3](docs/reports/phase-3-implementation-report.md), and
 [C — Phase 4 audit](docs/research/phase-4-final-audit.md),
+[Phase 3 QA review](docs/research/phase-3-independent-qa-review.md),
 [Phase 3 security review](docs/reports/phase-3-security-review.md), and
+[security reassessment](docs/security/phase-3-security-reassessment.md),
+[remediation roadmap](docs/research/phase-3-remediation-roadmap.md), and
 [provider evaluation](docs/research/2026-11-14-provider-evaluation.md).
 
 See [`memory/next-steps.md`](memory/next-steps.md) and

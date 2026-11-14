@@ -256,6 +256,25 @@ integrity/retention gaps, and provider-boundary validation gaps.
 **Consequence:** Phase 3 acceptance remains withheld pending independent QA and remediation or
 explicit risk acceptance. This decision authorises no Phase 5 implementation.
 
+### DEC-021 — Phase 3 independent audit verdict
+
+**Date:** 2026-11-14
+**Status:** Audit complete; developer acceptance still required.
+**Decision:** Record the independent QA verdict as **FAIL for Phase 3 acceptance** and the
+security reassessment as **ACCEPT WITH CONDITIONS** for private loopback-only development and
+**REJECT** for public/shared-network exposure. The full local suite independently executed by
+the orchestrator passes 208 tests, but passing tests do not close F-01…F-10, GAP-013…GAP-020, or
+S-01…S-19.
+**Reason:** The audit verified substantial working infrastructure while finding unresolved
+response-boundary, provenance, freshness, validation, football-result-semantics, archive, and
+API-exposure defects. Acceptance cannot be inferred from the test count.
+**Consequence:** Phase 3 is not accepted. The remediation roadmap must be executed or each
+remaining risk explicitly accepted before any Phase 5 implementation, live provider use, or
+public exposure.
+**References:** `docs/research/phase-3-independent-qa-review.md`,
+`docs/security/phase-3-security-reassessment.md`,
+`docs/research/phase-3-remediation-roadmap.md`.
+
 ---
 
 ## Rejected approaches

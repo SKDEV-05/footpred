@@ -27,7 +27,8 @@ The platform must never promise guaranteed outcomes or a fixed accuracy figure.
 ## 3. Current phase
 
 **Phase 4 — Offline synthetic-test-only intelligence foundation. Status: accepted by the
-developer.** Phase 3 acceptance is withheld pending independent QA and security review.
+developer.** Phase 3 independent QA review is complete with a FAIL acceptance verdict; security
+reassessment permits private loopback-only use with conditions and rejects public exposure.
 Phase 5 is **not approved**; its entry gates remain closed. No live provider call has been
 made and no coverage is verified.
 Phase 4 adds pure descriptive intelligence, point-in-time features, mathematical probability

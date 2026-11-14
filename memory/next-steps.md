@@ -10,13 +10,15 @@ or deployment without explicit developer approval.
 
 Phase 4 is accepted (DEC-018). Three entry gates remain before Phase 5 implementation:
 
-1. Obtain an independent Phase 3 QA review; the attempted review was blocked by the provider
-   usage limit and produced no findings.
-2. Review the completed security report and remediate or explicitly risk-accept S-01…S-19
-   before any public/shared-network exposure.
+1. Remediate or explicitly risk-accept QA findings F-01…F-10 and GAP-013…GAP-020; the
+   independent QA verdict is FAIL.
+2. Review the security reassessment and remediate or explicitly risk-accept S-01…S-19 before
+   any public/shared-network exposure; public exposure is currently rejected.
 3. Decide provider, plan, competitions, seasons, and the public-display licence using the
    completed provider evaluation.
-4. Record one bounded live verification and populate the coverage matrix with evidence.
+4. Record one bounded live verification and populate the coverage matrix with evidence only
+   after the provider/licence decision and all required security conditions.
+5. Obtain a fresh independent QA/security review after remediation.
 
 Do not propose Phase 5 implementation until those gates pass.
 

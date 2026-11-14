@@ -1,12 +1,13 @@
 # Current State
 
 **Last updated:** 2026-11-14
-**Phase:** 4 — Offline synthetic-test-only intelligence foundation
+**Phase:** Phase 4 accepted; Phase 3 remediation gate
 **Status:** Phase 4 accepted by the developer as an offline, synthetic-test-only foundation.
-Phase 3 acceptance is withheld pending independent QA review. The independent security review
-returned **ACCEPT WITH CONDITIONS** for private loopback-only use and rejects public exposure in
-the current state. The read-only provider evaluation is complete, but no provider entitlement,
-licence, or live coverage is verified. Phase 5 is **not approved**.
+Independent QA returns **FAIL for Phase 3 acceptance**; the implementation is only partially
+verified despite 208 locally passing tests. Independent security returns **ACCEPT WITH CONDITIONS**
+for private loopback-only use and **REJECT** for public exposure. The provider evaluation is
+complete, but no provider entitlement, licence, or live coverage is verified. Phase 5 is **not
+approved**.
 
 ## Completed
 
@@ -77,6 +78,10 @@ licence, or live coverage is verified. Phase 5 is **not approved**.
   conditional football-data.org verification, explicitly not a global-coverage decision.
 - Security review: `docs/reports/phase-3-security-review.md`; public exposure is rejected
   until its conditions are addressed.
+- QA review: `docs/research/phase-3-independent-qa-review.md`; Phase 3 acceptance failed on
+  unresolved correctness, provenance, validation and exposure defects.
+- Security reassessment: `docs/security/phase-3-security-reassessment.md`.
+- Remediation roadmap: `docs/research/phase-3-remediation-roadmap.md`.
 
 ## Structure
 
@@ -102,9 +107,9 @@ memory/  rules/
 
 ## Current blockers
 
-- Phase 3 independent QA review: blocked by provider usage limit; acceptance is withheld.
-- Phase 3 security: public exposure blocked by S-01…S-19; private loopback-only use accepted
-  with conditions.
+- Phase 3 independent QA: **FAIL**; F-01…F-10 and GAP-013…GAP-020 remain open.
+- Phase 3 security: public exposure **REJECTED** by S-01…S-19; private loopback-only use
+  **ACCEPT WITH CONDITIONS**.
 - Provider credentials: none configured; live verification is **BLOCKED**.
 - Provider selection, plan, competition coverage, and licence: evaluation completed as research;
   developer decision and authorised verification remain pending.
