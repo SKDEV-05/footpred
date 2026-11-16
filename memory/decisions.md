@@ -275,6 +275,70 @@ public exposure.
 `docs/security/phase-3-security-reassessment.md`,
 `docs/research/phase-3-remediation-roadmap.md`.
 
+### DEC-022 — Phase 3.1 remediation remains conditionally incomplete
+
+**Date:** 2026-11-14
+**Status:** Implemented locally; final acceptance rejected pending exact-tree re-audit and
+remaining conditions.
+**Decision:** Apply the additive Phase 3.1 remediation: streaming bounded provider responses,
+safer retry/config/API behavior, engine-owned sync transactions, effective run metadata and raw
+linkage, dataset-aware freshness, statistics/participant validation, team-country separation,
+result phase fields/status invalidation, archive digest verification, and migrations `0002`–`0003`.
+Do not mark Phase 3 accepted yet.
+**Reason:** The local suite and migration checks are green, but failed-response evidence,
+retention/deletion, quota semantics, complete counter units, full football settlement semantics,
+and public security controls remain open or unverified. Passing tests do not establish provider
+coverage or licensing.
+**Consequence:** Private loopback development remains conditional; public/shared-network and live
+provider exposure remain rejected. Phase 5 remains blocked. The exact latest tree requires fresh
+independent QA/security/data/domain/architecture review.
+**References:** `docs/research/phase-3.1-remediation-report.md`,
+`docs/research/phase-3-remediation-roadmap.md`.
+
+### DEC-023 — Authorised live read-only ingestion and a real fixture UI (local only)
+
+**Date:** 2026-11-15
+**Status:** Implemented locally; private loopback-only; Phase 5 remains unapproved.
+**Decision:** On the developer's explicit request, perform read-only football-data.org ingestion
+into the existing SQLite store and make the local web UI show real stored fixtures (today,
+tomorrow, next 7 days, next 30 days) with crests, competition emblems, countries, and a match
+detail view. The fixture list is backed by new `/api/v1/countries` and a `country_id` filter;
+`teams.crest_url` and `competitions.emblem_url` are stored verbatim from the provider (migration
+`0004`). Provider fixtures whose participants are unassigned are skipped and reported, never
+stored with invented teams. The non-functional "Analyze Now" action and its missing endpoint
+were removed rather than replaced with a fake prediction.
+**Reason:** The developer needs a usable local product on real data. Displaying a stored fixture
+and its provider metadata is descriptive, not predictive, so it does not cross the Phase 5
+modelling boundary. Inventing teams, logos, or analysis would.
+**Consequence:** No model was fitted, no prediction or analysis is produced or persisted, no
+auth/deployment/public exposure was added, and no new major dependency was introduced. Stored
+coverage is exactly what the plan returned for the synced window; empty windows are reported as
+empty. Public display still requires the licence decision (LIM-006) and Phase 3 acceptance
+(DEC-020, DEC-022) remains withheld.
+**References:** `docs/research/provider-live-verification.md`,
+`docs/architecture/api-design.md`, `memory/known-limitations.md` (LIM-020, LIM-021).
+
+### DEC-024 — Freshness means "recently stored", not "fully successful"
+
+**Date:** 2026-11-15
+**Status:** Implemented locally; no schema change; private loopback-only.
+**Decision:** `data_is_stale` is computed from the last finished `fixtures` and `results` run that
+stored at least one record, whether that run ended `success` or `partial`. A run that stored
+nothing, failed, or is older than `DATA_STALE_AFTER_MINUTES` does not refresh the flag.
+`last_successful_sync_at` still counts only unqualified successes, and each `per_job_type` entry
+exposes `last_completed_at`, `last_completed_status` and `records_stored` so a partial refresh is
+never displayed as a success.
+**Reason:** A provider fixture with undecided participants is unstorable by design. Treating that
+skip as a data failure made every full sync `partial`, so a genuinely fresh 367-fixture dataset was
+reported stale seconds after it was written — an alert that is always on carries no information.
+The skip stays visible as a run error and in `data_sync_errors`; freshness answers a different
+question (was the store refreshed?) and now answers it correctly.
+**Consequence:** The dashboard no longer shows a false stale banner. The fixtures job remains
+`partial` and the UI labels it "(partial)". Coverage completeness is still not claimed: the flag is
+a job-level signal, not proof that every provider fixture is stored.
+**References:** `docs/architecture/api-design.md` (§3.1), `docs/guides/troubleshooting.md`,
+`apps/backend/tests/integration/test_api.py`.
+
 ---
 
 ## Rejected approaches
@@ -353,3 +417,67 @@ overflow/mass-conservation correction. No Phase 5 work was performed: no fitting
 real prediction, persistence, schema change, migration, API endpoint, provider call, frontend,
 or new dependency. Phase 4 acceptance and independent sign-off were still pending at that
 point; the developer subsequently accepted Phase 4 in DEC-018 without an independent sign-off.
+
+### DEC-025 — Phase 4 final acceptance report completed
+
+**Date:** 2026-11-15
+**Status:** Approved — evidence recorded in `docs/research/phase-4-final-acceptance-report.md`
+**Decision:** Phase 4 is accepted as an offline, synthetic-test-only intelligence foundation.
+All 247 backend tests pass; 84 Phase 4 intelligence tests verify mathematical primitives, temporal
+correctness, missing-data handling, quality classification, probability bounds, and evaluation
+mechanics. Security review confirms no I/O surface, no ambient time/randomness, and production
+configuration guards. Remaining Phase 3 conditions (S-03, S-18) and Phase 5 entry gates remain
+unresolved and block Phase 5.
+**Reason:** The mathematics and software boundary is verified; synthetic tests establish formula
+correctness and leakage guards; they do not establish predictive value or provider coverage.
+**Reference:** `docs/research/phase-4-final-acceptance-report.md`,
+`docs/research/phase-4-final-audit.md`.
+
+### DEC-026 — Phase 6 provider capability audit completed
+
+**Date:** 2026-11-15
+**Status:** Complete — documented in `docs/research/phase-6-provider-capability-audit.md`
+**Decision:** Record bounded live verification results for two providers (football-data.org and
+API-Football) from 2026-11-15 session. football-data.org: 13 competitions verified, 10-day window
+limit, statistics/H2H/depth UNVERIFIED. API-Football: 1,244 leagues visible, per-date only on
+Free, statistics/H2H/depth UNVERIFIED. No statistics or H2H endpoints were called (budget
+conservation). Coverage matrix records only observed data.
+**Reason:** Phase 6 Step 3 requires documented capability audit before ingestion planning.
+Separates verified live behavior from documented claims and explicit UNVERIFIED items.
+**Consequence:** No statistics ingestion, historical backfill, or feature preparation may proceed
+without explicit Phase 5 approval and provider/licence decision.
+**Reference:** `docs/research/phase-6-provider-capability-audit.md`,
+`docs/research/provider-live-verification.md`.
+
+### DEC-027 — Phase 5 private real-data analysis implemented under ADR-0010
+
+**Date:** 2026-11-16
+**Status:** Implemented and live-verified on loopback; independent review pending
+**Decision:**
+1. Historical results are ingested in bounded `season=<year>&status=FINISHED` requests. The
+   stored corpus is 4,905 results across eleven competitions; 10 extra-time/penalty records are
+   quarantined rather than merged.
+2. `VERIFIED_REAL` datasets require a provider code, archived payload ids, retrieval and
+   observation windows, and a content digest. Dataset ids are derived from the digest, which
+   excludes the dataset id itself. A dataset with no archived payload raises
+   `DatasetProvenanceError`; it is never certified with a placeholder id.
+3. Only regulation-time results are used. Extra time and shootouts are excluded.
+4. Results are eligible only when `MatchResult.resolved_at` is before the analysis checkpoint;
+   `Match.last_synced_at` is not used because it changes on every refresh.
+5. The retrospective backtest uses `kickoff + 3h <= test kickoff` because the entire backfill
+   was archived in one retrieval window. This is a documented retrospective evaluation, not a
+   reconstruction of historical knowledge.
+6. `poisson-v1.1.0` / `features-v1.1.0` / `evaluation-v1.1.0` use one shared rate estimator for
+   the live path and the backtest. 1X2 probabilities are normalized to exactly 1.0.
+7. Repeated analysis requests are idempotent on match, status, dataset digest, model version,
+   and evaluation version; `force=true` regenerates. Reports are append-only.
+8. The independent Poisson model is kept. Measured draw under-prediction is reported as a
+   limitation, not silently patched.
+**Evidence:** 265 tests pass; `alembic check` clean; match 410 is `READY` with 1X2
+0.6092/0.2320/0.1588 and xG 1.74/0.76; the 50-match PD backtest reports Brier 0.5722, log loss
+0.9581, skill 0.1417, ECE 0.0661; the frontend build passes and the panel was browser-checked.
+**Consequence:** Phase 5 analysis is usable privately. It is not a public product, not a
+guarantee, and not evidence of general accuracy.
+**Reference:** `docs/decisions/ADR-0010-verified-real-dataset-contract.md`,
+`docs/research/2026-11-16-historical-coverage-report.md`,
+`docs/architecture/api-design.md`.

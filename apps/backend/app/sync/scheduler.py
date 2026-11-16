@@ -8,7 +8,7 @@ limit, and both are process-wide assumptions (ADR-0007).
 from __future__ import annotations
 
 import logging
-from typing import Callable
+from typing import Any, Callable
 
 from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.schedulers.blocking import BlockingScheduler
@@ -20,6 +20,7 @@ from app.sync.jobs import (
     sync_competition_details,
     sync_competitions,
     sync_fixtures,
+    sync_history,
     sync_results,
     sync_statistics,
     sync_teams,
@@ -33,15 +34,18 @@ JOB_HANDLERS: dict[str, Callable] = {
     "teams": sync_teams,
     "fixtures": sync_fixtures,
     "results": sync_results,
+    "history": sync_history,
     "statistics": sync_statistics,
 }
 
 
-def run_named_job(engine: SyncEngine, job_type: str) -> SyncRunSummary:
+def run_named_job(
+    engine: SyncEngine, job_type: str, parameters: dict[str, Any] | None = None
+) -> SyncRunSummary:
     handler = JOB_HANDLERS.get(job_type)
     if handler is None:
         raise ValueError(f"unknown sync job type: {job_type}")
-    return engine.run(job_type=job_type, handler=handler)
+    return engine.run(job_type=job_type, handler=handler, parameters=parameters)
 
 
 def build_scheduler(engine: SyncEngine, settings: Settings) -> BlockingScheduler:

@@ -32,6 +32,7 @@ _MATCH_STATUS = {
     "POSTPONED": MatchStatus.POSTPONED,
     "CANCELLED": MatchStatus.CANCELLED,
     "AWARDED": MatchStatus.AWARDED,
+    "ABANDONED": MatchStatus.ABANDONED,
 }
 
 _MATCH_WINNER = {

@@ -5,9 +5,8 @@ from __future__ import annotations
 from sqlalchemy import Select, distinct, func, select
 from sqlalchemy.orm import Session, joinedload
 
-from app.models.core import Competition, Match, Season, Team
-from app.normalization.names import normalize_name
-from app.repositories.base import Page, count_of, fetch_page
+from app.models.core import Competition, Country, Match, Season, Team
+from app.repositories.base import Page, count_of, fetch_page, search_term
 
 
 def _competition_statement(
@@ -17,10 +16,27 @@ def _competition_statement(
     if country_id is not None:
         statement = statement.where(Competition.country_id == country_id)
     if query:
+        normalized = search_term(query)
         statement = statement.where(
-            Competition.normalized_name.contains(normalize_name(query))
+            Competition.normalized_name.contains(normalized, autoescape=True)
         )
     return statement
+
+
+def list_countries(
+    session: Session,
+    *,
+    page: int,
+    page_size: int,
+) -> Page[Country]:
+    statement = select(Country).order_by(Country.name.asc(), Country.id.asc())
+    return fetch_page(
+        session,
+        statement=statement,
+        count_statement=count_of(statement),
+        page=page,
+        page_size=page_size,
+    )
 
 
 def list_competitions(
@@ -93,8 +109,9 @@ def _team_statement(
     if country_id is not None:
         statement = statement.where(Team.country_id == country_id)
     if query:
+        normalized = search_term(query)
         statement = statement.where(
-            Team.normalized_name.contains(normalize_name(query))
+            Team.normalized_name.contains(normalized, autoescape=True)
         )
     return statement
 

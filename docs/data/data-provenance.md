@@ -4,7 +4,10 @@
 
 Every number the platform displays, evaluates, or feeds to a model must be traceable to the bytes it came from, the code that transformed it, and the time it was known. Without that chain, a correction cannot be distinguished from a bug, a backtest cannot be reproduced, and a published probability cannot be defended. Provenance is therefore a product requirement, not an operational nicety.
 
-This document defines the provenance record and lineage model. It does not define storage technology; no schema exists yet.
+This document defines the provenance record and lineage model. Phase 3 implements raw payload
+rows, sync-run parameters, raw payload links on normalized statistics/errors/quarantine where
+available, and content-digest verification. Full historical versioning and provider correction
+lineage remain deferred.
 
 ## Provenance record fields
 
@@ -14,10 +17,10 @@ This document defines the provenance record and lineage model. It does not defin
 | Endpoint / resource | Exact path, query, or file identifier | Not a generic label such as "fixtures" |
 | Request parameters | Everything that changes the response | Pagination, season, competition, filters |
 | Fetched at | UTC timestamp of retrieval | Distinct from the provider's own timestamps |
-| Payload hash | Digest of the stored raw bytes | Canonicalisation and algorithm choice deferred |
+| Payload hash | SHA-256 digest of the stored raw bytes | Recomputed on archive reuse and read |
 | Schema version | Expected payload shape at parse time | Bumped when the contract changes |
 | Parser version | Code version that produced normalized fields | Separate from overall application version |
-| Ingest run ID | Identifier for the execution that stored the payload | Groups all records from one run |
+| Ingest run ID | Identifier for the execution that stored the payload | `data_sync_runs` stores effective parameters and timestamps |
 | Transformation ID | Identifier for each normalization or derivation step | Must be resolvable to code |
 | Code version | Commit or artefact version that executed | Includes model and feature code where relevant |
 | Source record ID | Provider's identifier for the entity | Stored even when unstable, with the instability noted |
@@ -72,7 +75,11 @@ Reproduction is verified by rebuilding in a clean environment and comparing outp
 
 ## Retention and access
 
-Raw payloads and provenance rows are retained longer than the derived artefacts they support. Provenance is read-mostly: writes come from pipelines, reads from audit, debugging, and evaluation. Access is restricted to roles that need it, and provenance records contain no credentials or unnecessary personal data. Retention duration is a deferred decision, bounded by licence terms and storage cost.
+Raw payloads and provenance rows are retained longer than the derived artefacts they support.
+Phase 3 filters sensitive request parameters and uses content-addressed paths, but does not
+implement deletion or automated retention. Retention duration and deletion ownership remain
+blocked on provider licensing. Existing payloads must not be deleted automatically. Provenance is
+read-mostly and local operator access is assumed; public exposure is rejected.
 
 ## Relationship to backtesting and point-in-time correctness
 

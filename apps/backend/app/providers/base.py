@@ -93,13 +93,13 @@ class ProviderAdapter(ABC):
     def fetch_matches(
         self,
         *,
-        date_from: date,
-        date_to: date,
+        date_from: date | None = None,
+        date_to: date | None = None,
         competition_external_id: str | None = None,
         season_external_id: str | None = None,
         status: str | None = None,
     ) -> Fetched[list[ProviderMatch]]:
-        """Fetch fixtures/results in a bounded date range."""
+        """Fetch fixtures/results in a bounded date range, season, or competition."""
 
     @abstractmethod
     def fetch_match_detail(self, match_external_id: str) -> Fetched[ProviderMatchDetail]:

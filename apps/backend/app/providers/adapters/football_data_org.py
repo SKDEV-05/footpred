@@ -16,6 +16,8 @@ Design rules applied here:
 from __future__ import annotations
 
 import json
+import logging
+from dataclasses import replace
 from datetime import date, datetime, timezone
 from typing import Any, Callable, Mapping, TypeVar
 
@@ -37,6 +39,8 @@ from app.providers.dto import (
     ProviderTeamRef,
     ProviderTeamStatistics,
 )
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
@@ -75,24 +79,29 @@ class FootballDataOrgAdapter(ProviderAdapter):
         *,
         params: Mapping[str, str] | None,
         resource_type: str,
-        parser: Callable[[Mapping[str, Any]], T],
+        parser: Callable[[Mapping[str, Any]], T | tuple[T, int]],
     ) -> Fetched[T]:
         response = self._http.get(path, params=params)
+        # Archive ALL responses (including failures) for forensic replay.
+        raw_payload_id = self._archive.store(response, resource_type=resource_type)
         if response.status_code != 200:
             raise ProviderResponseError(
                 f"Provider returned HTTP {response.status_code} for {path}."
             )
-        raw_payload_id = self._archive.store(response, resource_type=resource_type)
         payload = _decode_json_object(response.content, path)
         try:
-            items = parser(payload)
+            parsed = parser(payload)
         except ProviderResponseError:
             raise
         except (KeyError, TypeError, ValueError) as exc:
             raise ProviderResponseError(
                 f"Provider payload for {path} did not match the documented structure."
             ) from exc
-        return Fetched(items=items, raw_payload_id=raw_payload_id)
+        if isinstance(parsed, tuple):
+            items, skipped = parsed
+        else:
+            items, skipped = parsed, 0
+        return Fetched(items=items, raw_payload_id=raw_payload_id, skipped=skipped)
 
     # -- competitions ------------------------------------------------------------
 
@@ -155,16 +164,18 @@ class FootballDataOrgAdapter(ProviderAdapter):
     def fetch_matches(
         self,
         *,
-        date_from: date,
-        date_to: date,
+        date_from: date | None = None,
+        date_to: date | None = None,
         competition_external_id: str | None = None,
         season_external_id: str | None = None,
         status: str | None = None,
     ) -> Fetched[list[ProviderMatch]]:
-        params: dict[str, str] = {
-            "dateFrom": date_from.isoformat(),
-            "dateTo": date_to.isoformat(),
-        }
+        params: dict[str, str] = {}
+        if date_from is not None and date_to is not None:
+            params["dateFrom"] = date_from.isoformat()
+            params["dateTo"] = date_to.isoformat()
+        elif (date_from is None) != (date_to is None):
+            raise ValueError("date_from and date_to must be provided together")
         if status:
             params["status"] = status
         if competition_external_id:
@@ -175,11 +186,9 @@ class FootballDataOrgAdapter(ProviderAdapter):
             path = MATCH_PATH
         return self._fetch(
             path,
-            params=params,
+            params=params or None,
             resource_type="matches",
-            parser=lambda payload: [
-                _parse_match(item) for item in _require_list(payload, "matches")
-            ],
+            parser=_parse_match_list,
         )
 
     def fetch_match_detail(self, match_external_id: str) -> Fetched[ProviderMatchDetail]:
@@ -247,6 +256,16 @@ def _optional_int(payload: Mapping[str, Any], key: str) -> int | None:
         return None
     if isinstance(value, bool) or not isinstance(value, int):
         raise ProviderResponseError(f"Expected an integer at '{key}'.")
+    return value
+
+
+def _optional_url(payload: Mapping[str, Any], key: str) -> str | None:
+    value = _optional_str(payload, key)
+    if value is None:
+        return None
+    lowered = value.lower()
+    if not (lowered.startswith("https://") or lowered.startswith("http://")):
+        raise ProviderResponseError(f"Expected an HTTP(S) URL at '{key}'.")
     return value
 
 
@@ -354,6 +373,7 @@ def _parse_competition(payload: Mapping[str, Any]) -> ProviderCompetition:
         type=_require_str(payload, "type"),
         country_name=country_name,
         country_code=country_code,
+        emblem=_optional_url(payload, "emblem"),
         seasons=seasons,
         current_season=current,
     )
@@ -362,11 +382,15 @@ def _parse_competition(payload: Mapping[str, Any]) -> ProviderCompetition:
 def _parse_team_ref(payload: Mapping[str, Any], *, label: str) -> ProviderTeamRef:
     if not isinstance(payload, Mapping):
         raise ProviderResponseError(f"Expected a team object at '{label}'.")
+    country_name, country_code = _parse_area(payload)
     return ProviderTeamRef(
         external_id=_require_external_id(payload),
         name=_require_str(payload, "name"),
         short_name=_optional_str(payload, "shortName"),
         tla=_optional_str(payload, "tla"),
+        country_name=country_name,
+        country_code=country_code,
+        crest=_optional_url(payload, "crest"),
     )
 
 
@@ -384,6 +408,7 @@ def _parse_team(payload: Mapping[str, Any]) -> ProviderTeam:
         country_code=country_code,
         venue_name=venue,
         founded=_optional_int(payload, "founded"),
+        crest=_optional_url(payload, "crest"),
     )
 
 
@@ -392,10 +417,16 @@ def _parse_score(payload: Mapping[str, Any]) -> ProviderScore | None:
         raise ProviderResponseError("Expected an object at 'score'.")
     full_time = payload.get("fullTime")
     half_time = payload.get("halfTime")
+    extra_time = payload.get("extraTime")
+    penalties = payload.get("penalties")
     if full_time is not None and not isinstance(full_time, Mapping):
         raise ProviderResponseError("Expected an object at 'score.fullTime'.")
     if half_time is not None and not isinstance(half_time, Mapping):
         raise ProviderResponseError("Expected an object at 'score.halfTime'.")
+    if extra_time is not None and not isinstance(extra_time, Mapping):
+        raise ProviderResponseError("Expected an object at 'score.extraTime'.")
+    if penalties is not None and not isinstance(penalties, Mapping):
+        raise ProviderResponseError("Expected an object at 'score.penalties'.")
     winner = _optional_str(payload, "winner")
     duration = _optional_str(payload, "duration")
     return ProviderScore(
@@ -405,6 +436,10 @@ def _parse_score(payload: Mapping[str, Any]) -> ProviderScore | None:
         ht_away=_optional_int(half_time or {}, "away"),
         winner=winner.upper() if winner else None,
         duration=duration.upper() if duration else None,
+        extra_home=_optional_int(extra_time or {}, "home"),
+        extra_away=_optional_int(extra_time or {}, "away"),
+        penalties_home=_optional_int(penalties or {}, "home"),
+        penalties_away=_optional_int(penalties or {}, "away"),
     )
 
 
@@ -415,12 +450,27 @@ def _parse_match(payload: Mapping[str, Any]) -> ProviderMatch:
     competition_payload = _require_mapping(payload, "competition")
     season_payload = _require_mapping(payload, "season")
 
+    # The embedded competition omits its area; the match-level area describes the same
+    # competition and is the only source of its country in this resource.
+    competition = _parse_competition(competition_payload)
+    if competition.country_name is None and competition.country_code is None:
+        area_name, area_code = _parse_area(payload)
+        if area_name is not None or area_code is not None:
+            competition = replace(
+                competition, country_name=area_name, country_code=area_code
+            )
+
     score_payload = payload.get("score")
-    score = _parse_score(score_payload) if isinstance(score_payload, Mapping) else None
+    if score_payload is None:
+        score = None
+    elif isinstance(score_payload, Mapping):
+        score = _parse_score(score_payload)
+    else:
+        raise ProviderResponseError("Expected an object at 'score'.")
 
     return ProviderMatch(
         external_id=_require_external_id(payload),
-        competition=_parse_competition(competition_payload),
+        competition=competition,
         season=_parse_season(season_payload),
         kickoff_utc=_require_datetime(payload, "utcDate"),
         status=_require_str(payload, "status"),
@@ -438,6 +488,51 @@ def _parse_match(payload: Mapping[str, Any]) -> ProviderMatch:
         score=score,
         provider_last_updated=_optional_datetime(payload, "lastUpdated"),
     )
+
+
+def _participant_assigned(payload: Any) -> bool:
+    """A fixture can be published before its participants are decided."""
+
+    if not isinstance(payload, Mapping):
+        return False
+    identifier = payload.get("id")
+    return (
+        isinstance(identifier, int)
+        and not isinstance(identifier, bool)
+        and identifier > 0
+    )
+
+
+def _parse_match_list(payload: Mapping[str, Any]) -> tuple[list[ProviderMatch], int]:
+    """Parse a match list, skipping fixtures whose participants are not yet assigned.
+
+    A knockout bracket entry can have ``homeTeam: {id: null, name: null}``. Such a record
+    has no identity that can be stored without inventing a team, so it is counted and
+    reported by the job instead of aborting the whole list.
+    """
+
+    parsed: list[ProviderMatch] = []
+    skipped = 0
+    for item in _require_list(payload, "matches"):
+        if not isinstance(item, Mapping):
+            raise ProviderResponseError("Expected a match object.")
+        if not (
+            _participant_assigned(item.get("homeTeam"))
+            and _participant_assigned(item.get("awayTeam"))
+        ):
+            skipped += 1
+            continue
+        parsed.append(_parse_match(item))
+    if skipped:
+        logger.warning(
+            "provider returned fixtures without assigned participants",
+            extra={
+                "event": "provider.matches_without_participants",
+                "component": "provider",
+                "count": skipped,
+            },
+        )
+    return parsed, skipped
 
 
 def _parse_statistics(

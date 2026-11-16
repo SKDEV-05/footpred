@@ -8,7 +8,7 @@ continues; a failed list fetch fails the run.
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
+from datetime import date, timedelta
 from typing import Any, Callable, Sequence
 
 from sqlalchemy import select
@@ -28,12 +28,36 @@ from app.ingestion.fixtures import upsert_fixture
 from app.ingestion.outcomes import UpsertResult
 from app.ingestion.statistics import upsert_statistics
 from app.ingestion.teams import upsert_team
-from app.models.core import Match
+from app.models.core import Competition, Match
 from app.models.enums import FINAL_STATUSES
 from app.models.provenance import ProviderMatchMapping, ProviderTeamMapping
 from app.sync.engine import SyncContext
 
 logger = logging.getLogger(__name__)
+
+
+def _window_chunks(
+    date_from: date, date_to: date, *, max_days: int
+) -> list[tuple[date, date]]:
+    """Split a date range into inclusive chunks of at most ``max_days`` each.
+
+    football-data.org's Free tier rejects any window over 10 days with HTTP 400
+    ("Specified period must not exceed 10 days"), so a 14-day sync window must be
+    fetched in two requests. The chunk bound comes from configuration, not a constant,
+    so a different plan can raise it without a code change.
+    """
+
+    if max_days < 1:
+        raise ValueError("max_days must be at least 1")
+    if date_to < date_from:
+        raise ValueError("date_to must not precede date_from")
+    chunks: list[tuple[date, date]] = []
+    start = date_from
+    while start <= date_to:
+        end = min(start + timedelta(days=max_days - 1), date_to)
+        chunks.append((start, end))
+        start = end + timedelta(days=1)
+    return chunks
 
 
 class _Skip(Exception):
@@ -48,7 +72,9 @@ def _process(
     external_id_of: Callable[[Any], str | None],
     handler: Callable[[Session, Any], UpsertResult | list[UpsertResult] | None],
     excerpt_of: Callable[[Any], Any] | None = None,
+    raw_payload_id: int | None = None,
 ) -> None:
+    ctx.observe_raw_payload(raw_payload_id)
     for item in items:
         external_id = external_id_of(item)
         try:
@@ -60,7 +86,25 @@ def _process(
                     for result in results if isinstance(results, list) else [results]:
                         ctx.count(session, result)
         except (RecordValidationError, IdentityAmbiguityError) as exc:
-            _quarantine(ctx, entity_type, external_id, exc, item, excerpt_of)
+            _quarantine(ctx, entity_type, external_id, exc, item, excerpt_of, raw_payload_id)
+        except ValueError:
+            _quarantine(
+                ctx,
+                entity_type,
+                external_id,
+                RecordValidationError(
+                    [
+                        ValidationIssue(
+                            code="provider_boundary_validation",
+                            message="provider record failed boundary validation",
+                            field=entity_type,
+                        )
+                    ]
+                ),
+                item,
+                excerpt_of,
+                raw_payload_id,
+            )
         except IntegrityError:
             logger.warning(
                 "database constraint rejected a provider record",
@@ -77,6 +121,7 @@ def _process(
                 _IntegrityFailure(),
                 item,
                 excerpt_of,
+                raw_payload_id,
             )
         except _Skip as exc:
             with ctx.session() as session:
@@ -104,6 +149,7 @@ def _quarantine(
     exc: Exception,
     item: Any,
     excerpt_of: Callable[[Any], Any] | None,
+    raw_payload_id: int | None = None,
 ) -> None:
     code = getattr(exc, "code", "validation_error")
     message = redact_text(str(exc))
@@ -115,6 +161,7 @@ def _quarantine(
             external_id=external_id,
             code=str(code),
             message=message,
+            raw_payload_id=raw_payload_id,
             payload_excerpt=excerpt,
         )
 
@@ -133,6 +180,7 @@ def sync_competitions(ctx: SyncContext) -> None:
         handler=lambda session, dto: upsert_competition(
             session, provider_id=ctx.provider_id, dto=dto
         ),
+        raw_payload_id=fetched.raw_payload_id,
     )
 
 
@@ -142,10 +190,12 @@ def sync_competition_details(ctx: SyncContext) -> None:
     if not codes:
         raise AppError(
             "SYNC_COMPETITION_IDS is empty. Set at least one provider competition code "
-            "before syncing competition details."
+            "before syncing competition details.",
+            code="missing_competition_ids",
         )
     for code in codes:
         fetched = ctx.adapter.fetch_competition(code)
+        ctx.observe_raw_payload(fetched.raw_payload_id)
         try:
             with ctx.session() as session:
                 competition_result, season_results = ingest_competition_detail(
@@ -154,10 +204,11 @@ def sync_competition_details(ctx: SyncContext) -> None:
                 ctx.count(session, competition_result)
                 ctx.count_many(session, season_results)
         except (RecordValidationError, IdentityAmbiguityError) as exc:
-            _quarantine(ctx, "competition", code, exc, fetched.items, None)
+            _quarantine(ctx, "competition", code, exc, fetched.items, None, fetched.raw_payload_id)
         except IntegrityError:
             _quarantine(
-                ctx, "competition", code, _IntegrityFailure(), fetched.items, None
+                ctx, "competition", code, _IntegrityFailure(), fetched.items, None,
+                fetched.raw_payload_id
             )
 
 
@@ -167,7 +218,8 @@ def sync_teams(ctx: SyncContext) -> None:
     if not codes:
         raise AppError(
             "SYNC_COMPETITION_IDS is empty. Set at least one provider competition code "
-            "before syncing teams."
+            "before syncing teams.",
+            code="missing_competition_ids",
         )
     for code in codes:
         fetched = ctx.adapter.fetch_teams(code)
@@ -179,67 +231,164 @@ def sync_teams(ctx: SyncContext) -> None:
             handler=lambda session, dto: upsert_team(
                 session, provider_id=ctx.provider_id, dto=dto
             ),
+            raw_payload_id=fetched.raw_payload_id,
         )
 
 
 def sync_fixtures(ctx: SyncContext) -> None:
     ctx.adapter.require("fixtures")
     settings = ctx.settings
-    today = utc_now().date()
-    date_from = today - timedelta(days=settings.sync_lookback_days)
-    date_to = today + timedelta(days=settings.sync_lookahead_days)
+    date_from = date.fromisoformat(ctx.parameters["date_from"])
+    date_to = date.fromisoformat(ctx.parameters["date_to"])
+    chunks = _window_chunks(
+        date_from, date_to, max_days=settings.provider_max_window_days
+    )
 
     codes: Sequence[str | None] = settings.competition_ids or (None,)
     for code in codes:
-        fetched = ctx.adapter.fetch_matches(
-            date_from=date_from,
-            date_to=date_to,
-            competition_external_id=code,
-        )
-        _process(
-            ctx,
-            fetched.items,
-            entity_type="match",
-            external_id_of=lambda dto: dto.external_id,
-            handler=lambda session, dto: upsert_fixture(
-                session,
-                provider_id=ctx.provider_id,
-                dto=dto,
-                sync_run_id=ctx.run_id,
-                kickoff_window_minutes=settings.identity_kickoff_window_minutes,
-            ),
-            excerpt_of=_match_excerpt,
-        )
+        for chunk_from, chunk_to in chunks:
+            fetched = ctx.adapter.fetch_matches(
+                date_from=chunk_from,
+                date_to=chunk_to,
+                competition_external_id=code,
+            )
+            _report_skipped(ctx, fetched)
+            _process(
+                ctx,
+                fetched.items,
+                entity_type="match",
+                external_id_of=lambda dto: dto.external_id,
+                handler=lambda session, dto: upsert_fixture(
+                    session,
+                    provider_id=ctx.provider_id,
+                    dto=dto,
+                    sync_run_id=ctx.run_id,
+                    kickoff_window_minutes=settings.identity_kickoff_window_minutes,
+                    raw_payload_id=fetched.raw_payload_id,
+                ),
+                excerpt_of=_match_excerpt,
+                raw_payload_id=fetched.raw_payload_id,
+            )
+
 
 
 def sync_results(ctx: SyncContext) -> None:
     ctx.adapter.require("results")
     settings = ctx.settings
-    today = utc_now().date()
-    date_from = today - timedelta(days=settings.sync_lookback_days)
+    date_from = date.fromisoformat(ctx.parameters["date_from"])
+    date_to = date.fromisoformat(ctx.parameters["date_to"])
+    chunks = _window_chunks(
+        date_from, date_to, max_days=settings.provider_max_window_days
+    )
 
     codes: Sequence[str | None] = settings.competition_ids or (None,)
     for code in codes:
-        fetched = ctx.adapter.fetch_matches(
-            date_from=date_from,
-            date_to=today,
-            competition_external_id=code,
-            status="FINISHED",
-        )
-        _process(
-            ctx,
-            fetched.items,
-            entity_type="match",
-            external_id_of=lambda dto: dto.external_id,
-            handler=lambda session, dto: upsert_fixture(
-                session,
-                provider_id=ctx.provider_id,
-                dto=dto,
-                sync_run_id=ctx.run_id,
-                kickoff_window_minutes=settings.identity_kickoff_window_minutes,
-            ),
-            excerpt_of=_match_excerpt,
-        )
+        for chunk_from, chunk_to in chunks:
+            fetched = ctx.adapter.fetch_matches(
+                date_from=chunk_from,
+                date_to=chunk_to,
+                competition_external_id=code,
+                status="FINISHED",
+            )
+            _report_skipped(ctx, fetched)
+            _process(
+                ctx,
+                fetched.items,
+                entity_type="match",
+                external_id_of=lambda dto: dto.external_id,
+                handler=lambda session, dto: upsert_fixture(
+                    session,
+                    provider_id=ctx.provider_id,
+                    dto=dto,
+                    sync_run_id=ctx.run_id,
+                    kickoff_window_minutes=settings.identity_kickoff_window_minutes,
+                    raw_payload_id=fetched.raw_payload_id,
+                ),
+                excerpt_of=_match_excerpt,
+                raw_payload_id=fetched.raw_payload_id,
+            )
+
+
+def sync_history(ctx: SyncContext) -> None:
+    """Synchronise historical finished matches for entitled competitions and seasons."""
+    ctx.adapter.require("results")
+    settings = ctx.settings
+
+    seasons_param = ctx.parameters.get("seasons")
+    if seasons_param:
+        if isinstance(seasons_param, str):
+            seasons = [s.strip() for s in seasons_param.split(",") if s.strip()]
+        else:
+            seasons = [str(s) for s in seasons_param]
+    else:
+        seasons = ["2026", "2025"]
+
+    codes_param = ctx.parameters.get("competition_ids")
+    if codes_param:
+        if isinstance(codes_param, str):
+            codes = [c.strip() for c in codes_param.split(",") if c.strip()]
+        else:
+            codes = list(codes_param)
+    elif settings.competition_ids:
+        codes = list(settings.competition_ids)
+    else:
+        with ctx.session() as session:
+            db_codes = session.execute(
+                select(Competition.code).where(Competition.code.isnot(None))
+            ).scalars().all()
+            codes = [
+                c for c in db_codes
+                if c in {"PL", "PD", "BL1", "SA", "FL1", "ELC", "DED", "PPL", "BSA", "CL", "CLI"}
+            ]
+
+    for code in codes:
+        for season in seasons:
+            try:
+                fetched = ctx.adapter.fetch_matches(
+                    competition_external_id=code,
+                    season_external_id=str(season),
+                    status="FINISHED",
+                )
+            except AppError as exc:
+                logger.warning(
+                    "historical match fetch failed for competition %s season %s: %s",
+                    code,
+                    season,
+                    exc,
+                    extra={
+                        "event": "sync.history_fetch_failed",
+                        "component": "sync",
+                        "competition": code,
+                        "season": season,
+                    },
+                )
+                with ctx.session() as session:
+                    ctx.record_error(
+                        session,
+                        stage="fetch",
+                        code=getattr(exc, "code", "fetch_error"),
+                        message=f"fetch failed for {code} season {season}: {exc}",
+                        entity_type="match",
+                    )
+                continue
+
+            _report_skipped(ctx, fetched)
+            _process(
+                ctx,
+                fetched.items,
+                entity_type="match",
+                external_id_of=lambda dto: dto.external_id,
+                handler=lambda session, dto: upsert_fixture(
+                    session,
+                    provider_id=ctx.provider_id,
+                    dto=dto,
+                    sync_run_id=ctx.run_id,
+                    kickoff_window_minutes=settings.identity_kickoff_window_minutes,
+                    raw_payload_id=fetched.raw_payload_id,
+                ),
+                excerpt_of=_match_excerpt,
+                raw_payload_id=fetched.raw_payload_id,
+            )
 
 
 def sync_statistics(ctx: SyncContext) -> None:
@@ -250,6 +399,7 @@ def sync_statistics(ctx: SyncContext) -> None:
         # Fetch outside any transaction: the archive commits its own row.
         try:
             fetched = ctx.adapter.fetch_match_detail(external_id)
+            ctx.observe_raw_payload(fetched.raw_payload_id)
         except AppError as exc:
             with ctx.session() as session:
                 ctx.record_error(
@@ -262,30 +412,42 @@ def sync_statistics(ctx: SyncContext) -> None:
                 )
             continue
 
-        try:
-            with ctx.session() as session:
-                outcomes = _persist_statistics(
+        for team_stats in fetched.items.statistics:
+            detail = type(fetched.items)(
+                match=fetched.items.match,
+                statistics=(team_stats,),
+            )
+            try:
+                with ctx.session() as session:
+                    outcomes = _persist_statistics(
+                        ctx,
+                        session,
+                        match_id,
+                        detail,
+                        raw_payload_id=fetched.raw_payload_id,
+                    )
+                    for outcome in outcomes:
+                        ctx.count(session, outcome)
+            except (RecordValidationError, IdentityAmbiguityError) as exc:
+                _quarantine(
                     ctx,
-                    session,
-                    match_id,
-                    fetched.items,
-                    raw_payload_id=fetched.raw_payload_id,
+                    "match_statistics",
+                    external_id,
+                    exc,
+                    {"match_id": match_id, "team_external_id": team_stats.team_external_id},
+                    None,
+                    fetched.raw_payload_id,
                 )
-                for outcome in outcomes:
-                    ctx.count(session, outcome)
-        except (RecordValidationError, IdentityAmbiguityError) as exc:
-            _quarantine(
-                ctx, "match_statistics", external_id, exc, {"match_id": match_id}, None
-            )
-        except IntegrityError:
-            _quarantine(
-                ctx,
-                "match_statistics",
-                external_id,
-                _IntegrityFailure(),
-                {"match_id": match_id},
-                None,
-            )
+            except IntegrityError:
+                _quarantine(
+                    ctx,
+                    "match_statistics",
+                    external_id,
+                    _IntegrityFailure(),
+                    {"match_id": match_id, "team_external_id": team_stats.team_external_id},
+                    None,
+                    fetched.raw_payload_id,
+                )
 
 
 # -- helpers ---------------------------------------------------------------------
@@ -323,6 +485,7 @@ def _persist_statistics(
             select(ProviderTeamMapping.team_id).where(
                 ProviderTeamMapping.provider_id == ctx.provider_id,
                 ProviderTeamMapping.external_id == team_stats.team_external_id,
+                ProviderTeamMapping.is_active.is_(True),
             )
         ).scalars().first()
         if team_id is None:
@@ -350,6 +513,25 @@ def _persist_statistics(
             )
         )
     return outcomes
+
+
+def _report_skipped(ctx: SyncContext, fetched: Any) -> None:
+    """Record provider records that could not be stored without inventing data."""
+
+    skipped = getattr(fetched, "skipped", 0)
+    if not skipped:
+        return
+    with ctx.session() as session:
+        ctx.record_error(
+            session,
+            stage="provider",
+            code="match_without_participants",
+            message=(
+                f"{skipped} provider fixtures named no participants and were not stored."
+            ),
+            entity_type="match",
+            raw_payload_id=fetched.raw_payload_id,
+        )
 
 
 def _match_excerpt(dto) -> dict[str, Any]:

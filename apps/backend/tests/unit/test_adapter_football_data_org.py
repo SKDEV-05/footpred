@@ -192,3 +192,56 @@ def test_competition_based_match_query_uses_documented_path_and_params():
         "season": "7001",
         "status": "FINISHED",
     }
+
+
+def _match_payload() -> dict:
+    return json.loads(_load("football_data_org_matches.json"))
+
+
+def test_match_area_fills_competition_country_and_media_is_captured():
+    payload = _match_payload()
+    payload["matches"][0]["competition"]["emblem"] = "https://crests.example/el.png"
+    payload["matches"][0]["homeTeam"]["crest"] = "https://crests.example/home.png"
+
+    adapter, _, _ = _adapter({"/matches": json.dumps(payload).encode()})
+    fetched = adapter.fetch_matches(
+        date_from=datetime(2026, 8, 1).date(),
+        date_to=datetime(2026, 8, 31).date(),
+    )
+
+    match = fetched.items[0]
+    assert match.competition.country_name == "Examplia"
+    assert match.competition.country_code == "EX"
+    assert match.competition.emblem == "https://crests.example/el.png"
+    assert match.home_team.crest == "https://crests.example/home.png"
+    assert match.away_team.crest is None
+
+
+def test_unassigned_knockout_fixture_is_counted_and_skipped():
+    payload = _match_payload()
+    tbd = json.loads(json.dumps(payload["matches"][0]))
+    tbd["id"] = 8999
+    tbd["homeTeam"] = {"id": None, "name": None, "shortName": None, "tla": None}
+    tbd["awayTeam"] = {"id": None, "name": None, "shortName": None, "tla": None}
+    payload["matches"].insert(0, tbd)
+
+    adapter, _, _ = _adapter({"/matches": json.dumps(payload).encode()})
+    fetched = adapter.fetch_matches(
+        date_from=datetime(2026, 8, 1).date(),
+        date_to=datetime(2026, 8, 31).date(),
+    )
+
+    assert fetched.skipped == 1
+    assert [match.external_id for match in fetched.items] == ["8001", "8002"]
+
+
+def test_non_http_media_url_is_rejected():
+    payload = _match_payload()
+    payload["matches"][0]["homeTeam"]["crest"] = "javascript:alert(1)"
+
+    adapter, _, _ = _adapter({"/matches": json.dumps(payload).encode()})
+    with pytest.raises(ProviderResponseError):
+        adapter.fetch_matches(
+            date_from=datetime(2026, 8, 1).date(),
+            date_to=datetime(2026, 8, 31).date(),
+        )

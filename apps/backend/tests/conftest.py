@@ -26,7 +26,10 @@ def database(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("API_DOCS_ENABLED", "true")
     monkeypatch.setenv("DATA_STALE_AFTER_MINUTES", "360")
     monkeypatch.setenv("SYNC_COMPETITION_IDS", "")
-    monkeypatch.delenv("FOOTBALL_DATA_ORG_TOKEN", raising=False)
+    # An empty token (not a deleted one) is what neutralises a real credential: the
+    # Settings validator maps blank to None, and an exported empty variable also stops
+    # pydantic-settings from falling back to a token committed to .env on the host.
+    monkeypatch.setenv("FOOTBALL_DATA_ORG_TOKEN", "")
     monkeypatch.delenv("SYNC_ENABLED", raising=False)
 
     get_settings.cache_clear()

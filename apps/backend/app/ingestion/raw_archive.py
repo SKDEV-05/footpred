@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import re
 import tempfile
 from pathlib import Path
 from typing import Callable
@@ -28,6 +29,7 @@ from app.providers.dto import RawResponse
 logger = logging.getLogger(__name__)
 
 _MAX_PATH_LENGTH = 500
+_PROVIDER_CODE = re.compile(r"^[a-z0-9_]{1,32}$")
 
 
 class RawArchive:
@@ -41,8 +43,8 @@ class RawArchive:
         storage_root: Path,
         session_factory: Callable[[], Session] | sessionmaker[Session] | None = None,
     ) -> None:
-        if not provider_code.strip():
-            raise ValueError("provider_code must not be empty")
+        if not _PROVIDER_CODE.fullmatch(provider_code):
+            raise ValueError("provider_code must match [a-z0-9_]{1,32}")
         self._provider_code = provider_code
         self._provider_id = provider_id
         self._root = Path(storage_root).expanduser().resolve()
@@ -112,11 +114,32 @@ class RawArchive:
         )
         return payload_id
 
+    def read(self, *, storage_path: str, content_sha256: str) -> bytes:
+        """Read an archived payload and verify its path and digest before returning it."""
+
+        path = (self._root / storage_path).resolve()
+        if self._root not in path.parents or path == self._root:
+            raise ArchiveError("Refusing to read outside the archive root.")
+        try:
+            content = path.read_bytes()
+        except OSError as exc:
+            raise ArchiveError("Archived provider payload is unavailable.") from exc
+        digest = hashlib.sha256(content).hexdigest()
+        if digest != content_sha256:
+            raise ArchiveError("Archived provider payload digest mismatch.")
+        return content
+
     def _relative_path(self, digest: str) -> str:
         return f"{self._provider_code}/{digest[:2]}/{digest}.json"
 
     def _write_once(self, path: Path, content: bytes) -> None:
-        if path.exists() and path.stat().st_size == len(content):
+        if path.exists():
+            if path.is_symlink() or not path.is_file():
+                raise ArchiveError("Archive object is not a regular file.")
+            existing_digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            expected_digest = hashlib.sha256(content).hexdigest()
+            if existing_digest != expected_digest:
+                raise ArchiveError("Archive object digest mismatch.")
             return
         path.parent.mkdir(parents=True, exist_ok=True)
         handle, temporary_name = tempfile.mkstemp(

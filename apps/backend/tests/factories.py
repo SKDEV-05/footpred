@@ -59,6 +59,10 @@ def make_score(
     ht_away: int | None = None,
     winner: str | None = None,
     duration: str | None = "REGULAR",
+    extra_home: int | None = None,
+    extra_away: int | None = None,
+    penalties_home: int | None = None,
+    penalties_away: int | None = None,
 ) -> ProviderScore:
     return ProviderScore(
         home=home,
@@ -67,6 +71,10 @@ def make_score(
         ht_away=ht_away,
         winner=winner,
         duration=duration,
+        extra_home=extra_home,
+        extra_away=extra_away,
+        penalties_home=penalties_home,
+        penalties_away=penalties_away,
     )
 
 
@@ -200,8 +208,8 @@ class FakeAdapter(ProviderAdapter):
     def fetch_matches(
         self,
         *,
-        date_from,
-        date_to,
+        date_from=None,
+        date_to=None,
         competition_external_id=None,
         season_external_id=None,
         status=None,

@@ -1,133 +1,97 @@
 # Next Steps
 
-**Phase 4 is accepted by the developer (DEC-018); Phase 5 is not approved.** Its boundary is
-[ADR-0009](../docs/decisions/ADR-0009-pure-offline-intelligence-boundary.md) and its audit is
-[docs/research/phase-4-final-audit.md](../docs/research/phase-4-final-audit.md).
-Do not begin Phase 5 model fitting, real predictions, persistence/API work, frontend, auth,
-or deployment without explicit developer approval.
+**Phase 4 is accepted (DEC-018). Phase 5 is approved under ADR-0010 and implemented privately
+on loopback (DEC-027).** It is not a public product, has no performance guarantee, and must not
+be exposed on a shared network. The current evidence and limits are in
+[`PROJECT_STATUS.md`](../PROJECT_STATUS.md), [`memory/current-state.md`](current-state.md), and
+[`docs/research/2026-11-16-historical-coverage-report.md`](../docs/research/2026-11-16-historical-coverage-report.md).
+
+## Completed this session (2026-11-16)
+
+- Historical ingestion: 4,905 finished results stored across eleven competitions, 100%
+  payload-linked; 10 extra-time/penalty records quarantined with reasons.
+- Point-in-time dataset loader with real provenance, regulation-only filtering, and a
+  content-stable digest.
+- `poisson-v1.1.0` / `features-v1.1.0` / `evaluation-v1.1.0` with a shared rate estimator,
+  rolling-origin backtest, calibration, uniform baselines, and explicit model parameters.
+- Analysis API with four statuses, abstentions, idempotent reuse, forced regeneration, and
+  append-only history.
+- Next.js **Analyze Match** panel with probabilities, xG, markets, scorelines, historical
+  records, evaluation, calibration, provenance, limitations, and prior reports.
+- `python -m app.cli coverage [--format json|markdown]` and the coverage research report.
+- 265 backend tests pass; `alembic check` clean; `npm run build` passes; browser check at the
+  available 471 px viewport shows no console errors or horizontal overflow.
 
 ## Immediate next action
 
-Phase 4 is accepted (DEC-018). Three entry gates remain before Phase 5 implementation:
+1. Obtain independent QA/ML review of the exact analysis tree, the backtest protocol, and the
+   wording of every published probability. The current backtest is a local measurement.
+2. Re-run `python -m app.cli coverage`, the full test suite, and `alembic check` before any
+   external claim; attach the output.
+3. Decide whether the eleven-competition corpus is sufficient for the intended use. Do not add
+   a paid plan, statistics tier, or new provider without explicit approval.
+4. Resolve LIM-006 (display/redistribution licence) before any shared or public display.
+5. Keep the service on loopback. Do not add auth, deployment, or public hosting as a shortcut.
 
-1. Remediate or explicitly risk-accept QA findings F-01…F-10 and GAP-013…GAP-020; the
-   independent QA verdict is FAIL.
-2. Review the security reassessment and remediate or explicitly risk-accept S-01…S-19 before
-   any public/shared-network exposure; public exposure is currently rejected.
-3. Decide provider, plan, competitions, seasons, and the public-display licence using the
-   completed provider evaluation.
-4. Record one bounded live verification and populate the coverage matrix with evidence only
-   after the provider/licence decision and all required security conditions.
-5. Obtain a fresh independent QA/security review after remediation.
+## Analysis-specific follow-up
 
-Do not propose Phase 5 implementation until those gates pass.
+- Measure whether a low-score dependence term (for example Dixon-Coles rho) reduces the measured
+  draw under-prediction; record the decision as an ADR before applying it.
+- Add cross-competition and wider temporal backtests before making any accuracy statement beyond
+  the measured PD corpus.
+- Improve observation-time recording going forward; the current history was backfilled in one
+  window, so the retrospective evaluation cannot reconstruct earlier knowledge states.
+- Keep statistics, lineups, and injuries declared as missing. Do not estimate them from results.
+- Re-check the frontend on a phone-width device below 471 px (LIM-022).
 
-## Phase 3 foundation review
+## Phase 3 / security conditions still open
 
-1. Read `PROJECT_STATUS.md`, `memory/current-state.md`, and the two phase reports.
-2. Review the architecture decisions (ADR-0002 … ADR-0007) and the stack/database choice.
-3. Review `docs/data/coverage-matrix.md`: it is empty because nothing is live-verified.
-4. Decide the provider, plan, competition coverage, and licence position.
-5. Accept, amend, or reject the data foundation before any model work starts.
+1. Review `docs/research/phase-3.1-remediation-report.md`; final acceptance remains rejected
+   until failed-response evidence, retention, counter units, exact replay and domain conditions
+   are resolved or explicitly risk-accepted.
+2. Review the security reassessment and remediate or explicitly risk-accept S-01…S-19 before any
+   public or shared-network exposure; public exposure is currently rejected.
+3. Obtain fresh independent QA/security/data/domain/architecture review of the exact latest tree.
+4. Backups, restore rehearsal, monitoring, and secret-manager integration remain unbuilt.
+
+## Provider selection (PD-002) — status
+
+- football-data.org: verified live, 13 competitions, 10-day window limit, clause 9.1 licence risk.
+  Statistics/H2H/season depth UNVERIFIED; the free tier has no statistics.
+- API-Football: verified live, 1,244 leagues, per-date query only on Free plan, licence
+  unverified. Statistics/H2H/season depth UNVERIFIED.
+- Sportmonks, TheSportsDB, Sportradar: docs verified, no credential, no live call.
+- The existing adapter is football-data.org only; API-Football would require a new adapter.
+- The developer must decide provider, plan, competitions, seasons, and the display licence.
 
 ## Phase 3 close-out checklist
 
 - [x] Architecture docs, ADRs, and guides written.
 - [x] Schema, migrations, ingestion, sync, API, CLI implemented.
-- [x] 124 tests passing locally (2026-11-14 session); pagination validator regression fixed.
-- [x] Known gaps documented, including close-out findings GAP-013 through GAP-020.
+- [x] 265 tests passing locally (2026-11-16 session).
+- [x] Known gaps documented, including GAP-013 through GAP-020.
+- [x] Phase 4 final acceptance report and provider capability audit written.
 - [ ] Resolve/review live-data integrity and transport findings; add regression coverage.
-- [ ] Independent review by QA and security specialists — both attempts blocked by tool usage
-      limits; no review outcome exists. Restore access or arrange human review.
+- [ ] Independent review by QA and security specialists; previous attempts were blocked.
 - [ ] Developer sign-off.
 - [x] Version control initialised with a `.gitignore` excluding `.env`, databases, and raw data.
 
 ## Phase 4 close-out checklist
 
-- [x] Pure offline package under `apps/backend/app/intelligence/` with no I/O surface.
-- [x] Descriptive metrics, point-in-time features, quality abstention, structured reports.
-- [x] Supplied-parameter Poisson, Dixon-Coles, Elo, and market arithmetic.
-- [x] Evaluation mechanics: proper scores, reliability, temporal folds, explicit partition.
-- [x] Blocking audit findings fixed: overflow categories, neutral-baseline exclusion, fold
-      overlap, centralized synthetic enforcement, reproducible config metadata, numeric caps.
-- [x] 84 Phase 4 tests; full suite 208 passed locally; `compileall` exit 0.
-- [x] Final audit written at `docs/research/phase-4-final-audit.md`.
-- [x] Developer acceptance of Phase 4 (DEC-018, 2026-11-14).
-- [ ] Independent QA/security sign-off on the Phase 4 audit (not obtained; acceptance recorded).
-- [ ] Reproduce the 208-test run outside the implementing agent's environment.
+- [x] Pure intelligence package with synthetic-only guards (ADR-0009).
+- [x] Mathematical primitives, evaluation mechanics, and 84 intelligence tests.
+- [x] Final acceptance report and developer acceptance.
+- [x] Real-data contract recorded in ADR-0010 without weakening the synthetic path.
 
-## Live verification (requires approval and credentials)
+## Phase 5 close-out checklist
 
-Time-boxed, read-only, and recorded:
-
-Before starting: resolve or explicitly review the data-integrity and transport gaps listed in
-`memory/known-limitations.md` (GAP-013 onward). Local test success is not live-data acceptance.
-
-1. Obtain a token for a known plan; do not purchase on the developer's behalf.
-2. Record the plan, date, and provider terms reviewed.
-3. Run `python -m app.cli check-provider`; keep the archive id.
-4. Sync one competition and one season; record run counts.
-5. Compare returned fixtures, results, and statistics with the provider's own presentation.
-6. Record what was observed and what was **not** in `docs/data/coverage-matrix.md`.
-7. Confirm display/redistribution rights before anything is shown publicly.
-
-Stop if a paid commitment, legal agreement, or unclear licence is required.
-
-## Phase 5 prerequisites (not started)
-
-- [ ] Developer approval of Phases 2/3.
-- [ ] Provider, plan, competitions, and licence decided.
-- [ ] Live verification evidence recorded.
-- [ ] Point-in-time feature table design and leakage test protocol.
-- [ ] Baseline model and evaluation protocol fixed before results are inspected.
-- [ ] Prediction store with immutability and tamper-evidence.
-- [ ] Calibration segments and coverage decisions.
-- [ ] Decision on whether live data is in scope.
-- [ ] Independent review of the data foundation.
-
-## Pending decisions
-
-| ID | Decision | Owner | Blocks |
-| --- | --- | --- | --- |
-| PD-002 | Final provider selection | Developer + data-engineer | Live verification, coverage |
-| PD-003 | Competition/season coverage | Developer + product-architect | Coverage matrix, evaluation |
-| PD-004 | Data budget and plan | Developer | Provider choice, quota |
-| PD-005 | xG: licensed, computed, or omitted | Developer + football-analyst | Feature set |
-| PD-006 | ~~Storage stack confirmation~~ Resolved: SQLite for Phase 3; PostgreSQL deferred | Developer + backend-architect | Closed |
-| PD-007 | Whether live data is in scope initially | Developer | Architecture, ingestion |
-| PD-008 | Uncertainty presentation approach | Developer + ux-designer | Interface design |
-| PD-009 | Display/redistribution licence position | Developer | Public API or UI |
-| PD-010 | Version control and review workflow | Developer | Traceability, rollback |
-
-## Recommended sequencing after approval
-
-1. Live provider verification and coverage record.
-2. Fix any adapter defect the live payload reveals; add a regression test.
-3. Point-in-time data audit: confirm stored inputs are sufficient and correctly timestamped.
-4. Feature design with an explicit leakage review.
-5. Baseline model, fixed evaluation protocol, then results.
-6. Prediction store and evaluation report.
-7. Interface only after the numbers are trustworthy.
-
-Do not reorder modelling ahead of verified data. A model trained on unverified coverage and
-unverified missing-data behaviour produces confident nonsense.
-
-## Stop conditions
-
-Stop and ask the developer if:
-
-- a provider requires a paid commitment or legal agreement;
-- licensing terms are ambiguous for the intended use;
-- required history is unavailable at usable quality;
-- a design requires a technology not approved;
-- work would cross into Phase 5 without explicit approval;
-- a migration would destroy or rewrite stored data;
-- real provider data would be committed or published.
-
-## Related documents
-
-- `PROJECT_STATUS.md`
-- `memory/known-limitations.md`
-- `memory/decisions.md`
-- `docs/data/coverage-matrix.md`
-- `docs/architecture/implementation-plan.md`
+- [x] Historical results ingested with archive provenance.
+- [x] Point-in-time dataset, regulation-only corpus, no future leakage.
+- [x] Fitted Poisson model, exact 1X2 normalization, deterministic maths.
+- [x] Rolling-origin backtest with Brier, log loss, uniform baselines, and calibration bins.
+- [x] Persistence, analysis API, abstentions, idempotency, and report history.
+- [x] Analyze Match frontend with four statuses and explicit provenance/limitations.
+- [x] Coverage command and coverage research report.
+- [x] 265 backend tests, clean schema check, passing frontend build.
+- [ ] Independent QA/ML review and wider evaluation.
+- [ ] Licence decision and any public display.

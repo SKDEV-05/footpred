@@ -13,19 +13,30 @@ is discovered. Never remove an item silently; mark it resolved with the evidence
 | LIM-004 | Historical depth required for modelling is undecided | Affects storage and backtest design | Model research plus verified availability |
 | LIM-005 | No real-world volume, latency, or cost measurements exist | Scalability and SLA claims remain hypotheses | Measure after a live ingestion period |
 | LIM-006 | Licence for display and redistribution of provider data is unconfirmed | Public presentation may be blocked | Legal/licence review before publication |
-| LIM-007 | Live provider integration is **BLOCKED**: no token, no account, no live call | Cannot claim the integration works end to end | Credentials plus a recorded `check-provider` and sync run |
-| LIM-008 | Provider pricing, quota, coverage, statistics availability, and SLA are **UNVERIFIED** | Planning and product promises cannot rely on them | Read current official terms; record access date |
+| LIM-007 | Live provider integration is **RESOLVED** (2026-11-15): both providers verified live with rotated credentials; football-data.org returns 105 upcoming + 69 historical; API-Football returns 81 upcoming + 978 historical | Integration works end to end for read-only fixture retrieval | Public-display licence decision before any production use |
+| LIM-008 | Provider pricing, quota, coverage, statistics availability, and SLA are **PARTIALLY VERIFIED** — plan names and daily quotas confirmed; season depth, statistics, head-to-head, lineups, and SLA remain unverified | Planning and product promises cannot rely on them | Read current official terms; record access date; run bounded statistics probe |
 | LIM-009 | No API authentication, authorisation, or rate limiting | The API must bind to loopback or a trusted network | Auth design and approval before public exposure |
 | LIM-010 | No backup automation, restore rehearsal, or retention policy | Data loss recovery is manual and untested | Operational rehearsal before production use |
 | LIM-011 | No PostgreSQL verification; non-SQLite URLs fail closed | Portability is a design intention, not a property | Migration plan plus test evidence, if ever needed |
 | LIM-012 | No monitoring, alerting, dashboards, or metrics endpoint | Failures are visible only by inspecting logs and tables | Add before production |
 | LIM-013 | No secret manager integration | Credentials live in the process environment | Host-level control or a secret store before real use |
 | LIM-014 | Independent QA review completed with FAIL verdict; security reassessment completed with private-only conditions (2026-11-14) | Phase 3 acceptance and public exposure remain blocked; GAP-013…GAP-020 and S-01…S-19 are not resolved | Execute `docs/research/phase-3-remediation-roadmap.md`, then obtain fresh independent sign-off |
-| LIM-015 | Phase 4 uses only synthetic test fixtures and supplied parameters | It proves software/math behavior, not football accuracy, calibration, or usefulness | Licensed point-in-time history plus a frozen Phase 5 evaluation protocol |
-| LIM-016 | No fitted goal rates, Dixon-Coles rho, Elo policy, calibrator, or real sample policy exists | Mathematical outputs cannot be used as real predictions | Estimate and validate only after Phase 5 approval and verified data |
-| LIM-017 | Synthetic-data classification is caller-asserted inside `ResearchContext` | A deliberately mislabelled real dataset cannot be detected in-process | Enforce provenance at the persistence/ingestion boundary in Phase 5, not only in pure code |
+| LIM-015 | Phase 4 used only synthetic test fixtures and supplied parameters; **RESOLVED for execution** (2026-11-16): Phase 5 runs on 4,905 stored real results with provenance. It still does not prove general football accuracy | The analysis is real-data-backed but the measured backtest is one corpus, not a product claim | Independent review and wider temporal validation before any performance claim |
+| LIM-016 | No fitted goal rates, calibrator, or real sample policy exists; **RESOLVED** (2026-11-16): `poisson-v1.1.0` estimates competition baseline, attack/defence strength and form weights from prior results | Model is fitted and evaluated; calibration is reported, not applied as a correction | Measure and review before calling it calibrated |
+| LIM-017 | Synthetic-data classification was caller-asserted inside `ResearchContext`; **RESOLVED at the persistence boundary** (2026-11-16): `VERIFIED_REAL` datasets require archived payload ids, provider code, and evidence windows | Pure in-process code can still be handed a mislabelled dataset; the API path cannot certify one without archive evidence | Keep provenance enforcement at the repository/API boundary |
 | LIM-018 | Phase 4 digests detect changed input but are not signatures or tamper-proof storage | Reproducibility is weaker than tamper-evidence | Add signing/immutability only with an approved persistence design |
-| LIM-019 | The 208-test figure is a local run by the implementing assistant, not an independent CI result | It is evidence of local passing, not external acceptance | Reproduce on a clean environment or in CI after approval |
+| LIM-019 | The 265-test figure is a local run by the implementing assistant, not an independent CI result | It is evidence of local passing, not external acceptance | Reproduce on a clean environment or in CI after approval |
+| LIM-020 | Crest and emblem images are hot-linked from provider URLs (`crests.football-data.org`); their display/redistribution licence is part of the unresolved LIM-006 question | Private local display only; the URLs are stored values, never proxied or rehosted | Licence review before any public display |
+| LIM-021 | Stored fixture coverage is bounded by `SYNC_LOOKAHEAD_DAYS` (30) and by the 10-day request window; dates outside a successful sync are empty, not "no matches" | A future window can legitimately show zero fixtures until a sync covers it | Re-run the fixtures sync; do not infer absence of a fixture from an empty window |
+| LIM-022 | The mobile layout was exercised at a 486 px browser viewport but not at a 375 px phone width; the available tooling cannot set an arbitrary viewport | Narrow-screen behaviour below 486 px is unproven by execution | Check on a real phone or with devtools device emulation before any shared use |
+| LIM-023 | football-data.org Free tier returns no match statistics (probe 2026-11-15: `/matches/555085` has no `statistics` key on either team) | Statistics ingestion impossible on Free plan; analysis engine must abstain on statistics features | Paid Statistic Add-On or provider decision; not purchasable by agent |
+| LIM-024 | football-data.org Free tier has no verified H2H endpoint | H2H features must abstain, not fabricate | Provider decision; no verified path |
+| LIM-025 | Historical seasons retrievable by year param (`season=2025` → 380 PL matches) but season-ID filter returns 404 | Historical ingestion must use year parameter, ≤10-day chunks | Verified 2026-11-15; implement in sync history job |
+| LIM-026 | Intelligence engine rejected all non-SYNTHETIC datasets; **RESOLVED** (2026-11-16) by ADR-0010 and the repository evidence contract | Real analysis is possible while the synthetic path is unchanged | Keep ADR-0010 tests in the suite |
+| LIM-027 | The reported backtest covers 50 out-of-sample PD matches from one stored corpus and one competition | Brier 0.5722 and skill 0.1417 are local measurements, not a general accuracy claim; other competitions may differ | Add cross-competition and wider temporal evaluation before any claim |
+| LIM-028 | The independent Poisson model under-predicts draws on the measured corpus (draw calibration bin 0.20–0.40 predicts 0.2465, observes 0.3158) | Draw probabilities may be biased low; the model is documented, not silently corrected | Measure a low-score dependence term (e.g. Dixon-Coles rho) and decide via ADR whether to apply it |
+| LIM-029 | In-match statistics, lineups, and injuries are unavailable on the free tier; the model has no such features | The analysis relies on results and form only; it declares the missing features | Paid statistics tier or a different provider, with explicit approval |
+| LIM-030 | Historical results were backfilled in one retrieval window; point-in-time filtering uses `MatchResult.resolved_at`, not the true original observation time | Within the backfill, the analysis cannot reconstruct what was known at an earlier wall-clock moment | Treat the current backtest as retrospective; record observation times going forward |
 
 ## Implementation gaps
 
@@ -43,14 +54,14 @@ is discovered. Never remove an item silently; mark it resolved with the evidence
 | GAP-010 | Scheduler configuration was inspected; only worker refusal paths are exercised, not successful long-running scheduling | Missed ticks, shutdown and long-run behaviour are unverified |
 | GAP-011 | No API versioning policy beyond the `/api/v1` prefix | Breaking changes need a future version and deprecation plan |
 | GAP-012 | No coverage guarantee for any competition, season, or metric | The coverage matrix starts empty by design |
-| GAP-013 | HTTP size check runs after HTTPX buffers the body; numeric 429 `Retry-After` is capped at 60 seconds, HTTP-date values ignored | Not a memory/download bound; early retries possible. Review before live use |
-| GAP-014 | Token bucket starts with a full minute's burst capacity and refills continuously | Average-rate control is not a strict per-minute quota guarantee; provider window semantics need verification |
-| GAP-015 | CLI/scheduled jobs do not persist effective configuration/date windows; quarantine does not receive the fetched raw payload id | Run evidence is incomplete for exact replay and rejected-record provenance |
-| GAP-016 | Global freshness uses any successful job, including empty/reference-only jobs; counters mix fixture outcomes, statistics groups and metric rows | Fresh status is not proof of current fixture/result coverage; counters are not a row audit |
-| GAP-017 | Fixture ingestion assigns the competition's area to embedded teams; mapped team enrichment does not update name/country | International competitions can misattribute team countries; rename/country enrichment needs domain review before trusting live data |
-| GAP-018 | Final-score validation derives the winner from full-time goals without a shootout-specific rule | A legitimate shootout winner with level full-time goals can be rejected; regulation/extra-time/shootout interpretation needs regression coverage |
-| GAP-019 | Statistics upsert does not invoke `validate_statistics`; invalid key `ValueError`s fail the job rather than quarantine. It resolves team mappings without verifying they match the fixture participants | Statistics boundary is only partially validated; review and regression tests required before accepting live statistics |
-| GAP-020 | HTTP errors and oversized responses are not archived; existing archive files are reused based on size without a digest recheck | Archive is not complete transport evidence or tamper-proof storage |
+| GAP-013 | Provider responses are streamed and capped per response, but aggregate run budgets and transport-level early-abort proof remain incomplete | Per-response memory is bounded in code; live quota/large-run behavior remains unverified |
+| GAP-014 | Token bucket uses conservative single-token capacity and bounded numeric/date Retry-After handling, but is process-local | Provider window semantics and multi-worker quota compliance remain unverified |
+| GAP-015 | Effective windows, configuration and observed raw IDs are persisted, but no durable per-request manifest exists and failed attempts have no raw evidence | Replay diagnostics are improved but exact replay remains incomplete |
+| GAP-016 | Required fixture/result freshness rejects zero-fetched runs, but counters mix provider records, team-stat groups and metric rows | Freshness is not complete coverage proof; counter units require separation |
+| GAP-017 | Competition area no longer supplies team country; embedded team country can still change canonical country without field-level source/effective provenance | International identity is improved but country history/conflict handling remains open |
+| GAP-018 | Phase components, abandoned status, status invalidation and shootout cross-checks exist | Provider semantics, final-without-score, awarded policy and full transition matrix remain open |
+| GAP-019 | Statistics validation, active mapping checks and participant checks are enforced; per-team quarantine continues valid groups | Provider DTO boundary coverage and complete historical mapping policy remain open |
+| GAP-020 | Archive reuse/read digest verification and canonical raw links exist | Failed-response evidence, retention/deletion, permissions and backup policy remain open |
 | GAP-021 | Finite Poisson matrices represent scores above `K` as overflow categories, with an undecidable overflow-overflow cell | 1X2 must return bounds and derived markets are conditional on the finite representation |
 | GAP-022 | Intelligence features are descriptive and not opponent-strength adjusted or shrunk | Predictive usefulness and small-sample behavior are unknown |
 | GAP-023 | Evaluation mechanics do not fit calibration, create a final holdout, estimate uncertainty, or persist experiments | No real validation or reproducible experiment record exists |
@@ -69,6 +80,14 @@ is discovered. Never remove an item silently; mark it resolved with the evidence
 - Storage shape for Phase 4 features (relational vs columnar) is undecided.
 - Authentication and hosting model are undecided; no user accounts exist.
 - SQLite behaviour under sustained concurrent reads during a long write transaction is untested.
+
+### Provider-specific limitations (verified 2026-11-15)
+
+- football-data.org Free tier rejects any window over 10 days (`HTTP 400 "Specified period must not exceed 10 days."`). Sync must chunk windows.
+- football-data.org Free tier requires both `dateFrom` and `dateTo` together.
+- API-Football Free tier returns 0 for `?next=N` and `?from/to` range queries; only per-date `?date=` works.
+- API-Football Free tier has no league filter on upcoming fixtures.
+- Neither provider's public-display licence is confirmed. football-data.org clause 9.1 bars display after cancellation; API-Football terms not yet read.
 
 Resolved since the foundation phase: the worker mechanism (APScheduler, one process) and the
 primary database (SQLite) are decided and implemented.

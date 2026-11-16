@@ -19,12 +19,14 @@ class SyncRunOut(BaseModel):
     records_unchanged: int
     records_rejected: int
     error_count: int
-    error_summary: str | None
 
 
 class JobFreshness(BaseModel):
     job_type: str
     last_success_at: UtcDatetime | None
+    last_completed_at: UtcDatetime | None
+    last_completed_status: str | None
+    records_stored: int | None
 
 
 class SyncStatusOut(BaseModel):
@@ -39,6 +41,3 @@ class SyncStatusOut(BaseModel):
 class HealthOut(BaseModel):
     status: str
     database: str
-    provider_configured: bool
-    last_successful_sync_at: UtcDatetime | None
-    data_is_stale: bool

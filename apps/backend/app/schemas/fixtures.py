@@ -7,11 +7,28 @@ from datetime import date
 from pydantic import BaseModel, Field
 
 from app.schemas.common import UtcDatetime
+from app.schemas.reference import CountryOut
 
 
 class IdName(BaseModel):
     id: int
     name: str
+
+
+class TeamRef(IdName):
+    crest_url: str | None = Field(
+        default=None, description="Null when the provider supplies no crest."
+    )
+
+
+class CompetitionRef(IdName):
+    code: str | None = None
+    country: CountryOut | None = Field(
+        default=None, description="Null when the provider supplies no area."
+    )
+    emblem_url: str | None = Field(
+        default=None, description="Null when the provider supplies no emblem."
+    )
 
 
 class SeasonRef(BaseModel):
@@ -37,10 +54,10 @@ class ResultOut(BaseModel):
 
 class FixtureSummary(BaseModel):
     id: int
-    competition: IdName
+    competition: CompetitionRef
     season: SeasonRef
-    home_team: IdName
-    away_team: IdName
+    home_team: TeamRef
+    away_team: TeamRef
     kickoff_utc: UtcDatetime
     status: str
     matchday: int | None

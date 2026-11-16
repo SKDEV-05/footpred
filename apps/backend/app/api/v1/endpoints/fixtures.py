@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Path, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import Pagination, get_session, pagination
@@ -29,10 +29,14 @@ router = APIRouter(tags=["fixtures"])
 def list_fixtures(
     date_from: date | None = Query(None, description="Inclusive UTC date."),
     date_to: date | None = Query(None, description="Inclusive UTC date."),
-    competition_id: int | None = None,
-    season_id: int | None = None,
-    team_id: int | None = None,
+    competition_id: int | None = Query(None, ge=1, le=2**63 - 1),
+    country_id: int | None = Query(None, ge=1, le=2**63 - 1),
+    season_id: int | None = Query(None, ge=1, le=2**63 - 1),
+    team_id: int | None = Query(None, ge=1, le=2**63 - 1),
     status: MatchStatus | None = None,
+    q: str | None = Query(
+        None, max_length=100, description="Search team or competition name."
+    ),
     page: Pagination = Depends(pagination),
     session: Session = Depends(get_session),
 ) -> Page[FixtureSummary]:
@@ -42,9 +46,11 @@ def list_fixtures(
             date_from,
             date_to,
             competition_id,
+            country_id,
             season_id,
             team_id,
             status,
+            q,
         )
     )
     if not narrowed:
@@ -62,9 +68,11 @@ def list_fixtures(
         date_from=date_from,
         date_to=date_to,
         competition_id=competition_id,
+        country_id=country_id,
         season_id=season_id,
         team_id=team_id,
         status=status,
+        query=q,
     )
     return Page[FixtureSummary](
         items=[fixture_summary(match) for match in result.items],
@@ -78,8 +86,13 @@ def list_fixtures(
 @router.get("/fixtures/today", response_model=TodayResponse)
 def fixtures_today(
     day: date | None = Query(None, alias="date"),
-    timezone: str = Query("UTC", description="IANA timezone name."),
-    competition_id: int | None = None,
+    timezone: str = Query(
+        "UTC",
+        max_length=64,
+        pattern=r"^[A-Za-z0-9._+/-]+$",
+        description="IANA timezone name.",
+    ),
+    competition_id: int | None = Query(None, ge=1, le=2**63 - 1),
     session: Session = Depends(get_session),
 ) -> TodayResponse:
     from app.core.time import get_timezone
@@ -105,25 +118,29 @@ def fixtures_today(
 
 @router.get("/fixtures/{match_id}", response_model=FixtureDetail)
 def get_fixture(
-    match_id: int,
+    match_id: int = Path(..., ge=1, le=2**63 - 1),
     session: Session = Depends(get_session),
 ) -> FixtureDetail:
     match = fixtures_repo.get_match(session, match_id)
     if match is None:
         raise NotFoundError(f"Fixture {match_id} does not exist.")
     rows = fixtures_repo.statistics_for_match(session, match_id)
+    if match.result is None or not match.result.is_final:
+        rows = []
     return fixture_detail(match, statistics_available=bool(rows))
 
 
 @router.get("/fixtures/{match_id}/statistics", response_model=MatchStatisticsResponse)
 def get_fixture_statistics(
-    match_id: int,
+    match_id: int = Path(..., ge=1, le=2**63 - 1),
     session: Session = Depends(get_session),
 ) -> MatchStatisticsResponse:
     match = fixtures_repo.get_match(session, match_id)
     if match is None:
         raise NotFoundError(f"Fixture {match_id} does not exist.")
     rows = fixtures_repo.statistics_for_match(session, match_id)
+    if match.result is None or not match.result.is_final:
+        rows = []
     return MatchStatisticsResponse(
         match_id=match_id,
         available=bool(rows),

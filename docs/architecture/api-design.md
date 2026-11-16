@@ -1,8 +1,8 @@
 # API Design
 
-**Status:** Implemented in Phase 3 (read-only). Example values below are illustrative and are
-not real football data.
-**Decision:** ADR-0005
+**Status:** Implemented in Phase 3 (read-only) and Phase 5 (analysis `POST`, loopback only).
+Example values below are illustrative and are not real football data.
+**Decision:** ADR-0005 (read API), ADR-0010 (verified real dataset contract)
 **Base path:** `/api/v1`
 
 ## 1. Principles
@@ -13,8 +13,13 @@ not real football data.
   or removing one requires a new API version.
 - Timestamps are ISO-8601 UTC with `Z`.
 - Missing values are `null` or an absent metric, never `0`.
-- Phase 3 is read-only and unauthenticated. It must not be exposed publicly without an
-  authentication and rate-limiting layer.
+- The read API is unauthenticated. It must not be exposed publicly without an authentication
+  and rate-limiting layer.
+- The single write-shaped endpoint, `POST /analysis/matches/{id}`, persists a derived report.
+  It performs no provider I/O, is deterministic for the same stored input, and is restricted to
+  private loopback use.
+- A probability is published only with its sample size, dataset evidence, model version, and
+  out-of-sample evaluation, or not at all.
 
 ## 2. Common conventions
 
@@ -78,24 +83,28 @@ appears in structured logs. It never contains user data.
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/health` | Liveness: process responds, no dependency checks |
-| GET | `/api/v1/health` | Readiness: database reachable, provider configuration state, sync freshness |
+| GET | `/api/v1/health` | Minimal readiness: database reachable |
 
-`/api/v1/health` returns `200` when the database answers `SELECT 1`, otherwise `503`. Provider
-absence is reported as `provider_configured: false`, not as a failure: the platform can serve
-stored data without a live provider.
+`/api/v1/health` returns `200` when the database answers `SELECT 1`, otherwise `503`. It does
+not disclose provider configuration or freshness to anonymous callers. Detailed synchronization
+freshness is available from the operator-facing `/api/v1/sync/status` contract.
 
 ```json
 {
   "status": "ok",
-  "database": "ok",
-  "provider_configured": false,
-  "last_successful_sync_at": null,
-  "data_is_stale": true
+  "database": "ok"
 }
 ```
 
-`data_is_stale` uses the configured freshness threshold and becomes `true` when no successful
-sync is newer than it. It is a warning for the operator, not a fabricated freshness promise.
+`/api/v1/sync/status` reports freshness per job type. Its global `data_is_stale` flag requires
+recent `fixtures` and `results` work that actually stored records; reference-data or unrelated
+empty jobs cannot make match data appear fresh. A `partial` run counts as a refresh because it
+stored the records it could — the rejected or skipped remainder stays visible in the run status,
+`data_sync_errors`, and `quarantined_records`. A run that stored nothing, or failed, does not
+count. `last_successful_sync_at` remains literal: only unqualified successes of the required
+datasets set it. Each `per_job_type` entry also carries `last_completed_at`,
+`last_completed_status`, and `records_stored`, so a partial refresh is never displayed as a
+success. This remains a job-level signal, not a coverage guarantee.
 
 ### 3.2 Fixtures
 
@@ -106,9 +115,11 @@ sync is newer than it. It is a warning for the operator, not a fabricated freshn
 | `date_from` | date | inclusive, UTC date |
 | `date_to` | date | inclusive, UTC date |
 | `competition_id` | integer | |
+| `country_id` | integer | matches the competition's country |
 | `season_id` | integer | |
 | `team_id` | integer | matches either home or away |
 | `status` | enum | canonical match status |
+| `q` | string | case/diacritic-insensitive search over stored team and competition names; unsearchable input is a 422 |
 | `page`, `page_size` | integer | |
 
 If no narrowing filter is supplied, the endpoint defaults to `date_from = today (UTC)` and
@@ -119,10 +130,20 @@ Item schema `FixtureSummary`:
 ```json
 {
   "id": 1,
-  "competition": {"id": 1, "name": "Example League"},
+  "competition": {
+    "id": 1,
+    "name": "Example League",
+    "code": "EL",
+    "country": {"id": 1, "name": "Examplia", "iso_code": "EX"},
+    "emblem_url": "https://crests.example/el.png"
+  },
   "season": {"id": 1, "label": "2025/2026"},
-  "home_team": {"id": 1, "name": "Example Home FC"},
-  "away_team": {"id": 2, "name": "Example Away FC"},
+  "home_team": {
+    "id": 1,
+    "name": "Example Home FC",
+    "crest_url": "https://crests.example/home.png"
+  },
+  "away_team": {"id": 2, "name": "Example Away FC", "crest_url": null},
   "kickoff_utc": "2026-11-14T15:00:00Z",
   "status": "scheduled",
   "matchday": 12,
@@ -131,6 +152,9 @@ Item schema `FixtureSummary`:
   "score": null
 }
 ```
+
+`crest_url`, `emblem_url`, and `country` are stored provider values passed through verbatim.
+They are `null` when the provider supplies nothing; no placeholder image URL is invented.
 
 `score` is `null` until a final result is stored; it is never `{"home": 0, "away": 0}` by
 default.
@@ -197,17 +221,21 @@ When metrics exist, `metrics` maps the normalised metric name to a number. Units
 in `docs/data/coverage-matrix.md`. A metric absent from the object is unavailable; a metric with
 `0` is a measured zero.
 
-### 3.3 Competitions and seasons
+### 3.3 Competitions, countries, and seasons
 
 | Method | Path | Parameters | Response |
 | --- | --- | --- | --- |
+| GET | `/api/v1/countries` | `page`, `page_size` | `Page[Country]` |
 | GET | `/api/v1/competitions` | `country_id`, `q`, `page`, `page_size` | `Page[CompetitionSummary]` |
 | GET | `/api/v1/competitions/{competition_id}` | — | `CompetitionDetail` |
 | GET | `/api/v1/seasons` | `competition_id`, `page`, `page_size` | `Page[SeasonSummary]` |
 
 `q` is a case-insensitive substring search on the display name, bounded to 100 characters.
-A competition detail includes `country`, `type`, `code`, and `season_count`; it does not inline
-every season, to keep the response bounded.
+A competition detail includes `country`, `type`, `code`, `emblem_url`, and `season_count`; it
+does not inline every season, to keep the response bounded.
+
+`/countries` lists only countries that reference data has stored. It is the source for the
+country filter; the API never derives a country list from a hard-coded provider catalogue.
 
 ### 3.4 Teams
 
@@ -233,6 +261,49 @@ credentials, request headers, or full provider payloads.
 `SyncStatus` includes the last successful run, the last run of any status, stale-run count, and
 per-job-type last success. It is the operator's primary freshness view.
 
+### 3.6 Match analysis
+
+| Method | Path | Parameters | Response |
+| --- | --- | --- | --- |
+| POST | `/api/v1/analysis/matches/{match_id}` | `force` (boolean, default `false`) | `MatchAnalysis` |
+| GET | `/api/v1/analysis/{analysis_id}` | — | `MatchAnalysis` |
+| GET | `/api/v1/analysis/matches/{match_id}/history` | — | `[AnalysisHistoryItem]` |
+
+`POST` generates a report from stored results and persists it. It is not a provider call and
+does not mutate football data. A match that does not exist returns `404`; an existing match in a
+state that cannot be analysed returns `200` with an abstention status, because the abstention is
+a data state rather than a transport error.
+
+Report statuses:
+
+| Status | Meaning |
+| --- | --- |
+| `READY` | Probabilities were produced from a sufficient, provenance-backed corpus |
+| `INSUFFICIENT_DATA` | The verified history is below the documented threshold |
+| `DATA_UNAVAILABLE` | The match is finished, started, cancelled, postponed, or the kickoff has passed |
+| `ANALYSIS_FAILED` | The calculation or provenance check failed; no numbers are published |
+
+A `READY` report includes:
+
+- `match_overview` and `historical_context` (team records, venue splits, recent form, H2H);
+- `statistical_model` with 1X2 probabilities summing to 1.0, expected goals, secondary markets,
+  top scorelines, and the fitted `model_parameters`;
+- `data_quality` with the classification, provider, dataset id and digest, retrieved and
+  observed windows, sample sizes, missing features, and limitations;
+- `explanation` (why the expected goals and probabilities exist);
+- `evaluation` with the rolling-origin sample size, Brier, log loss, uniform baselines, Brier
+  skill, calibration bins, model/feature/evaluation versions, and the test period.
+
+Abstentions carry `error_message` and `limitations`, and leave `statistical_model` null. The API
+never fills a missing statistic with zero and never invents a provider payload id.
+
+Idempotency: a repeated `POST` reuses the latest report when the match, status, dataset digest,
+model version, and evaluation version match. `?force=true` regenerates and appends a new history
+row. Reports are append-only; `GET /analysis/{id}` returns the persisted snapshot unchanged.
+
+Analysis is private and loopback-only. It has no authentication and must not be exposed on a
+shared or public network.
+
 ## 4. Validation and status codes
 
 - Path and query types are validated by FastAPI/Pydantic. Failures return 422 in the common
@@ -242,6 +313,7 @@ per-job-type last success. It is the operator's primary freshness view.
 - `page_size > 100` returns 422 rather than being silently clamped, so callers see the limit.
 - Invalid enum values return 422 with the allowed values.
 - Unknown IDs return 404, never an empty object.
+- Analysis abstentions return 200 with an explicit status; they are not hidden as 4xx errors.
 - No endpoint returns a provider error code or provider message.
 
 ## 5. Versioning policy
@@ -253,8 +325,10 @@ per-job-type last success. It is the operator's primary freshness view.
 
 ## 6. Security notes
 
-- The API must not be exposed publicly in Phase 3: there is no authentication, authorisation,
-  or per-client rate limit.
+- The API must not be exposed publicly: there is no authentication, authorisation, or
+  per-client rate limit.
+- Analysis reports expose stored real results and are restricted to private loopback use until
+  the display/redistribution licence (LIM-006) is resolved.
 - No provider token is present in the API process configuration path that could leak through a
   response; secrets are never included in models or logs.
 - Error responses omit stack traces and internal identifiers beyond the internal resource ID.
@@ -263,8 +337,8 @@ per-job-type last success. It is the operator's primary freshness view.
 
 ## 7. Deliberately absent endpoints
 
-- Any `POST`/`PUT`/`DELETE`.
-- Predictions, probabilities, explanations, and evaluations (Phase 4).
-- Users, sessions, subscriptions.
+- `PUT`, `PATCH`, and `DELETE`.
+- Users, sessions, subscriptions, payments.
 - Raw provider payload download.
 - Odds, lineups, events, injuries.
+- Any endpoint that promises a guaranteed outcome or a fixed accuracy figure.

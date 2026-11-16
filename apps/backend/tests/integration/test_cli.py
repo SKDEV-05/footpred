@@ -29,7 +29,10 @@ def _isolated_database(tmp_path, monkeypatch):
     url = f"sqlite+pysqlite:///{tmp_path / 'cli.db'}"
     monkeypatch.setenv("DATABASE_URL", url)
     monkeypatch.setenv("RAW_STORAGE_DIR", str(tmp_path / "raw"))
-    monkeypatch.delenv("FOOTBALL_DATA_ORG_TOKEN", raising=False)
+    # An empty token (not a deleted one) is what neutralises a real credential: the
+    # Settings validator maps blank to None, and an exported empty variable also stops
+    # pydantic-settings from falling back to a token committed to .env on the host.
+    monkeypatch.setenv("FOOTBALL_DATA_ORG_TOKEN", "")
     monkeypatch.delenv("SYNC_ENABLED", raising=False)
     get_settings.cache_clear()
     reset_engine()

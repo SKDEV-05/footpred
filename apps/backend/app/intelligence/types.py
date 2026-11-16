@@ -9,7 +9,7 @@ from hashlib import sha256
 import json
 from math import isfinite
 from types import MappingProxyType
-from typing import Mapping
+from typing import Mapping, Sequence
 
 
 class Venue(StrEnum):
@@ -21,6 +21,49 @@ class Venue(StrEnum):
 
 class DataClassification(StrEnum):
     SYNTHETIC_TEST = "synthetic_test_data"
+    VERIFIED_REAL = "verified_real_data"
+
+
+@dataclass(frozen=True)
+class DatasetEvidence:
+    """Provenance required for a VERIFIED_REAL dataset (ADR-0010).
+
+    A real dataset is a claim about the world. The evidence block ties that claim to
+    archived raw payloads and a bounded observation window so the label cannot be
+    asserted bare. SYNTHETIC_TEST datasets require no evidence; VERIFIED_REAL datasets
+    are rejected without it.
+    """
+
+    provider_code: str
+    raw_payload_ids: tuple[int, ...]
+    retrieval_from_utc: datetime
+    retrieval_to_utc: datetime
+    payload_digest: str
+    observed_from_utc: datetime
+    observed_to_utc: datetime
+
+    def __post_init__(self) -> None:
+        if not self.provider_code or not isinstance(self.provider_code, str):
+            raise ValueError("provider_code must be a non-empty string")
+        if not self.raw_payload_ids:
+            raise ValueError("raw_payload_ids must not be empty")
+        if any(
+            type(item) is not int or item <= 0 for item in self.raw_payload_ids
+        ):
+            raise ValueError("raw_payload_ids must be positive integers")
+        if len(set(self.raw_payload_ids)) != len(self.raw_payload_ids):
+            raise ValueError("raw_payload_ids must not contain duplicates")
+        for name in ("retrieval_from_utc", "retrieval_to_utc", "observed_from_utc", "observed_to_utc"):
+            _require_aware(getattr(self, name), name)
+        if self.retrieval_from_utc >= self.retrieval_to_utc:
+            raise ValueError("retrieval window must be increasing")
+        if self.observed_from_utc >= self.observed_to_utc:
+            raise ValueError("observation window must be increasing")
+        if (
+            len(self.payload_digest) != 64
+            or any(character not in "0123456789abcdef" for character in self.payload_digest)
+        ):
+            raise ValueError("payload_digest must be a lowercase SHA-256 hex digest")
 
 
 @dataclass(frozen=True)
@@ -28,12 +71,23 @@ class ResearchContext:
     classification: DataClassification
     dataset_digest: str
     protocol_version: str
+    evidence: DatasetEvidence | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.classification, DataClassification):
             raise ValueError("classification must be a DataClassification")
-        if self.classification is not DataClassification.SYNTHETIC_TEST:
-            raise ValueError("only synthetic test data is permitted in Phase 4")
+        if self.classification is DataClassification.VERIFIED_REAL:
+            if not isinstance(self.evidence, DatasetEvidence):
+                raise ValueError(
+                    "VERIFIED_REAL datasets require a DatasetEvidence block"
+                )
+        elif self.classification is DataClassification.SYNTHETIC_TEST:
+            if self.evidence is not None:
+                raise ValueError(
+                    "SYNTHETIC_TEST datasets must not carry real-data evidence"
+                )
+        else:  # pragma: no cover - defensive; enum is closed
+            raise ValueError("classification must be a DataClassification")
         if len(self.dataset_digest) != 64 or any(
             character not in "0123456789abcdef" for character in self.dataset_digest
         ):
@@ -44,7 +98,7 @@ class ResearchContext:
 
 def require_context(context: ResearchContext) -> None:
     if not isinstance(context, ResearchContext):
-        raise ValueError("a validated synthetic ResearchContext is required")
+        raise ValueError("a validated ResearchContext is required")
 
 
 @dataclass(frozen=True)
@@ -194,41 +248,49 @@ class IntelligenceDataset:
     dataset_id: str
     classification: DataClassification
     matches: tuple[HistoricalMatch, ...]
+    evidence: DatasetEvidence | None = None
 
     def __post_init__(self) -> None:
         if not self.dataset_id:
             raise ValueError("dataset_id must not be empty")
         if len(self.matches) > 100_000:
-            raise ValueError("synthetic dataset exceeds the 100000-match safety limit")
+            raise ValueError("dataset exceeds the 100000-match safety limit")
         ids = [match.match_id for match in self.matches]
         if len(ids) != len(set(ids)):
             raise ValueError("duplicate match ids are not allowed")
+        if self.classification is DataClassification.VERIFIED_REAL:
+            if not isinstance(self.evidence, DatasetEvidence):
+                raise ValueError(
+                    "VERIFIED_REAL datasets require a DatasetEvidence block"
+                )
+        elif self.classification is DataClassification.SYNTHETIC_TEST:
+            if self.evidence is not None:
+                raise ValueError(
+                    "SYNTHETIC_TEST datasets must not carry real-data evidence"
+                )
+
+    def _canonical_rows(self) -> list[dict[str, object]]:
+        return _canonical_match_rows(self.matches)
+
+    @property
+    def content_digest(self) -> str:
+        """Digest of the materialised rows, independent of the dataset label.
+
+        ``dataset_id`` is not part of this digest, so the identifier can be derived
+        from the content without a circular dependency. Two analyses that read the
+        same results receive the same content digest even when they ran at different
+        wall-clock times.
+        """
+
+        return materialized_content_digest(self.matches, self.classification)
 
     @property
     def digest(self) -> str:
-        rows = [
-            {
-                "match_id": match.match_id,
-                "competition_id": match.competition_id,
-                "season_id": match.season_id,
-                "kickoff_utc": match.kickoff_utc.isoformat(),
-                "observed_at": match.observed_at.isoformat(),
-                "home_team_id": match.home_team_id,
-                "away_team_id": match.away_team_id,
-                "home_goals": match.home_goals,
-                "away_goals": match.away_goals,
-                "neutral_venue": match.neutral_venue,
-                "half_time_home_goals": match.half_time_home_goals,
-                "half_time_away_goals": match.half_time_away_goals,
-                "metrics": sorted(match.metrics.items()),
-            }
-            for match in sorted(self.matches, key=lambda item: item.match_id)
-        ]
         canonical = json.dumps(
             {
                 "dataset_id": self.dataset_id,
                 "classification": self.classification.value,
-                "matches": rows,
+                "matches": self._canonical_rows(),
             },
             sort_keys=True,
             separators=(",", ":"),
@@ -237,4 +299,45 @@ class IntelligenceDataset:
         return sha256(canonical.encode("utf-8")).hexdigest()
 
     def research_context(self, *, protocol_version: str = "phase4-v1") -> ResearchContext:
-        return ResearchContext(self.classification, self.digest, protocol_version)
+        return ResearchContext(
+            self.classification, self.digest, protocol_version, evidence=self.evidence
+        )
+
+
+def _canonical_match_rows(matches: Sequence[HistoricalMatch]) -> list[dict[str, object]]:
+    return [
+        {
+            "match_id": match.match_id,
+            "competition_id": match.competition_id,
+            "season_id": match.season_id,
+            "kickoff_utc": match.kickoff_utc.isoformat(),
+            "observed_at": match.observed_at.isoformat(),
+            "home_team_id": match.home_team_id,
+            "away_team_id": match.away_team_id,
+            "home_goals": match.home_goals,
+            "away_goals": match.away_goals,
+            "neutral_venue": match.neutral_venue,
+            "half_time_home_goals": match.half_time_home_goals,
+            "half_time_away_goals": match.half_time_away_goals,
+            "metrics": sorted(match.metrics.items()),
+        }
+        for match in sorted(matches, key=lambda item: item.match_id)
+    ]
+
+
+def materialized_content_digest(
+    matches: Sequence[HistoricalMatch],
+    classification: DataClassification,
+) -> str:
+    """Digest the rows that determine an analysis, without the dataset identifier."""
+
+    canonical = json.dumps(
+        {
+            "classification": classification.value,
+            "matches": _canonical_match_rows(matches),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    return sha256(canonical.encode("utf-8")).hexdigest()

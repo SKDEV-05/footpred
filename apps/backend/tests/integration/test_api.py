@@ -6,6 +6,7 @@ serialisation together.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 
 import pytest
@@ -15,7 +16,15 @@ from app.ingestion.fixtures import upsert_fixture
 from app.ingestion.outcomes import ensure_data_provider
 from app.ingestion.statistics import upsert_statistics
 from app.models.core import Match
-from tests.factories import make_match, make_score
+from app.models.enums import SyncStatus
+from app.models.provenance import DataSyncRun
+from tests.factories import (
+    SYNTHETIC_AWAY,
+    SYNTHETIC_COMPETITION,
+    SYNTHETIC_HOME,
+    make_match,
+    make_score,
+)
 
 SCHEDULED_KICKOFF = datetime(2026, 8, 15, 15, 0, tzinfo=timezone.utc)
 FINISHED_KICKOFF = datetime(2026, 8, 16, 15, 0, tzinfo=timezone.utc)
@@ -86,9 +95,7 @@ def test_readiness_reports_stale_when_no_sync_has_succeeded(client):
     body = response.json()
     assert body["status"] == "ok"
     assert body["database"] == "ok"
-    assert body["provider_configured"] is False
-    assert body["last_successful_sync_at"] is None
-    assert body["data_is_stale"] is True
+    assert body == {"status": "ok", "database": "ok"}
 
 
 def test_request_id_is_echoed_and_generated(client):
@@ -97,6 +104,44 @@ def test_request_id_is_echoed_and_generated(client):
 
     generated = client.get("/health")
     assert generated.headers["X-Request-ID"]
+
+    unsafe = client.get("/health", headers={"X-Request-ID": "bad\nrequest"})
+    assert unsafe.headers["X-Request-ID"] != "bad\nrequest"
+
+
+def test_api_bounds_page_ids_and_search_inputs(client):
+    assert client.get("/api/v1/fixtures", params={"page": 10001}).status_code == 422
+    assert client.get("/api/v1/fixtures/999999999999999999999999").status_code == 422
+    assert client.get("/api/v1/competitions", params={"q": "%%%"}).status_code == 422
+    assert client.get(
+        "/api/v1/fixtures/today", params={"timezone": "x" * 65}
+    ).status_code == 422
+
+
+def test_sync_run_api_does_not_expose_internal_failure_text(client):
+    with session_scope() as session:
+        session.add(
+            DataSyncRun(
+                job_type="fixtures",
+                status=SyncStatus.FAILED,
+                started_at=SCHEDULED_KICKOFF,
+                finished_at=FINISHED_KICKOFF,
+                parameters={},
+                records_fetched=0,
+                records_created=0,
+                records_updated=0,
+                records_unchanged=0,
+                records_rejected=0,
+                error_count=1,
+                error_summary="SQL SELECT secret_token FROM /private/provider.db",
+            )
+        )
+    response = client.get("/api/v1/sync/runs")
+    assert response.status_code == 200
+    body = response.text
+    assert "secret_token" not in body
+    assert "/private/provider.db" not in body
+    assert "error_summary" not in body
 
 
 def test_fixtures_are_filtered_by_utc_date_range(client, seeded):
@@ -236,8 +281,233 @@ def test_sync_status_is_read_only_and_honest_about_absence(client):
     assert runs.json()["total"] == 0
 
 
+def test_successful_reference_run_does_not_imply_fresh_fixture_data(client):
+    """A successful competitions job must not mark fixture data fresh (F-04)."""
+    with session_scope() as session:
+        session.add(
+            DataSyncRun(
+                job_type="competitions",
+                status=SyncStatus.SUCCESS,
+                started_at=SCHEDULED_KICKOFF,
+                finished_at=FINISHED_KICKOFF,
+                parameters={},
+                records_fetched=5,
+                records_created=5,
+                records_updated=0,
+                records_unchanged=0,
+                records_rejected=0,
+                error_count=0,
+            )
+        )
+    response = client.get("/api/v1/sync/status")
+    body = response.json()
+    assert body["data_is_stale"] is True
+    assert body["last_successful_sync_at"] is None
+
+
+def _add_run(
+    *,
+    job_type: str,
+    status: SyncStatus,
+    finished_at: datetime,
+    records_fetched: int = 0,
+    records_created: int = 0,
+    records_updated: int = 0,
+    records_unchanged: int = 0,
+    records_rejected: int = 0,
+    error_count: int = 0,
+) -> None:
+    with session_scope() as session:
+        session.add(
+            DataSyncRun(
+                job_type=job_type,
+                status=status,
+                started_at=finished_at,
+                finished_at=finished_at,
+                parameters={},
+                records_fetched=records_fetched,
+                records_created=records_created,
+                records_updated=records_updated,
+                records_unchanged=records_unchanged,
+                records_rejected=records_rejected,
+                error_count=error_count,
+            )
+        )
+
+
+def test_a_partial_run_that_stored_records_keeps_data_fresh(client):
+    """One unstorable provider fixture must not make a full sync look stale."""
+
+    now = datetime.now(timezone.utc)
+    _add_run(
+        job_type="fixtures",
+        status=SyncStatus.PARTIAL,
+        finished_at=now,
+        records_fetched=367,
+        records_updated=367,
+        error_count=1,
+    )
+    _add_run(
+        job_type="results",
+        status=SyncStatus.SUCCESS,
+        finished_at=now,
+        records_fetched=2,
+        records_updated=2,
+    )
+
+    response = client.get("/api/v1/sync/status")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["data_is_stale"] is False
+
+    fixtures = next(job for job in body["per_job_type"] if job["job_type"] == "fixtures")
+    assert fixtures["last_completed_status"] == "partial"
+    assert fixtures["last_completed_at"] is not None
+    assert fixtures["records_stored"] == 367
+    # A partial run is not a success, and the response must not call it one.
+    assert fixtures["last_success_at"] is None
+    results = next(job for job in body["per_job_type"] if job["job_type"] == "results")
+    assert body["last_successful_sync_at"] == results["last_success_at"]
+
+
+def test_a_partial_run_that_stored_nothing_does_not_refresh_data(client):
+    """Rejecting every record is not a refresh, whatever the run status says."""
+
+    now = datetime.now(timezone.utc)
+    _add_run(
+        job_type="fixtures",
+        status=SyncStatus.PARTIAL,
+        finished_at=now,
+        records_fetched=5,
+        records_rejected=5,
+        error_count=5,
+    )
+    _add_run(
+        job_type="results",
+        status=SyncStatus.SUCCESS,
+        finished_at=now,
+        records_fetched=2,
+        records_updated=2,
+    )
+
+    response = client.get("/api/v1/sync/status")
+    body = response.json()
+    assert body["data_is_stale"] is True
+
+    fixtures = next(job for job in body["per_job_type"] if job["job_type"] == "fixtures")
+    assert fixtures["records_stored"] == 0
+    assert fixtures["last_completed_status"] == "partial"
+
+
 def test_there_are_no_write_endpoints(client):
     for method in ("post", "put", "patch", "delete"):
         response = getattr(client, method)("/api/v1/fixtures")
         assert response.status_code == 405
         assert response.json()["error"]["code"] == "method_not_allowed"
+
+
+def test_media_fields_and_country_filter_use_stored_provider_values(client, seeded):
+    with session_scope() as session:
+        provider_id = ensure_data_provider(
+            session, code="test_provider", name="Test Provider"
+        ).id
+        other_competition = replace(
+            SYNTHETIC_COMPETITION,
+            external_id="9002",
+            name="Other League",
+            code="OL",
+            country_name="Otherland",
+            country_code="OT",
+            emblem="https://crests.example/ol.png",
+        )
+        upsert_fixture(
+            session,
+            provider_id=provider_id,
+            dto=make_match(
+                external_id="8003",
+                competition=other_competition,
+                # Each competition needs its own season identity; reusing a season id
+                # across competitions is an identity change and is rejected by design.
+                season=replace(SYNTHETIC_COMPETITION.seasons[0], external_id="7002"),
+                home=replace(
+                    SYNTHETIC_HOME,
+                    external_id="503",
+                    name="Other Home FC",
+                    crest="https://crests.example/oh.png",
+                ),
+                away=replace(SYNTHETIC_AWAY, external_id="504", name="Other Away FC"),
+                kickoff=datetime(2026, 8, 17, 15, 0, tzinfo=timezone.utc),
+            ),
+            sync_run_id=None,
+            kickoff_window_minutes=180,
+        )
+
+    countries = client.get("/api/v1/countries").json()
+    otherland = next(
+        item for item in countries["items"] if item["name"] == "Otherland"
+    )
+
+    response = client.get(
+        "/api/v1/fixtures",
+        params={
+            "date_from": "2026-08-01",
+            "date_to": "2026-08-31",
+            "country_id": otherland["id"],
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    item = body["items"][0]
+    assert item["competition"]["country"]["name"] == "Otherland"
+    assert item["competition"]["emblem_url"] == "https://crests.example/ol.png"
+    assert item["home_team"]["crest_url"] == "https://crests.example/oh.png"
+    assert item["away_team"]["crest_url"] is None
+
+
+def test_fixture_search_matches_team_and_competition_names(client, seeded):
+    response = client.get(
+        "/api/v1/fixtures",
+        params={
+            "date_from": "2026-08-01",
+            "date_to": "2026-08-31",
+            "q": "example home",
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["total"] == 2
+
+    response = client.get(
+        "/api/v1/fixtures",
+        params={
+            "date_from": "2026-08-01",
+            "date_to": "2026-08-31",
+            "q": "example league",
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["total"] == 2
+
+    response = client.get(
+        "/api/v1/fixtures",
+        params={
+            "date_from": "2026-08-01",
+            "date_to": "2026-08-31",
+            "q": "no such club",
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["total"] == 0
+
+
+def test_fixture_search_rejects_unsearchable_input(client, seeded):
+    response = client.get(
+        "/api/v1/fixtures",
+        params={
+            "date_from": "2026-08-01",
+            "date_to": "2026-08-31",
+            "q": "!!!",
+        },
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_error"

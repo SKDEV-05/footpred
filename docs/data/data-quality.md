@@ -2,7 +2,10 @@
 
 ## Purpose
 
-This document defines what "acceptable data" means for the platform and where quality is enforced. It applies to every tier described in [data-strategy.md](data-strategy.md): raw payloads are preserved regardless of quality, but normalized and derived layers may only be built from data that passes the gates below. Nothing here is implemented; it is the acceptance standard future pipelines must satisfy.
+This document defines what "acceptable data" means for the platform and where quality is enforced.
+Phase 3 implements selected schema, type, identity, referential, missing-vs-zero and quarantine
+checks. The remaining gates below are the acceptance standard and are explicitly marked where
+implementation is incomplete.
 
 Quality is a property of the evidence, not of the presentation. A dashboard that hides gaps is a quality failure even when every visible number is correct.
 
@@ -63,7 +66,9 @@ Each layer produces a result per dataset version, not a boolean for the pipeline
 - Expected update windows are defined per data class (fixture list, lineups before kickoff, in-match events, post-match statistics) and are configuration, not hardcoded assumptions.
 - A kickoff change invalidates any artefact marked "pre-match" against the old time.
 - An abandoned or suspended match is never promoted to a final state because no further updates arrived.
-- Staleness is exposed as a data status to downstream consumers; it is never filled with an estimated value.
+- Staleness is exposed by required synchronization datasets to downstream consumers; it is never
+  filled with an estimated value. Phase 3's status policy requires fixture and result successes;
+  competition/team/statistics freshness remains separately observable but not a completeness claim.
 - A record that stops updating inside its expected window is an incident, not a normal gap.
 
 ## Missing-statistics policy

@@ -70,6 +70,9 @@ def test_payload_bytes_and_metadata_are_persisted(database):
         assert row.content_type == "application/json"
         assert row.storage_path.endswith(f"{digest}.json")
         assert row.fetched_at == datetime(2026, 8, 1, 12, 0, tzinfo=timezone.utc)
+        assert archive.read(
+            storage_path=row.storage_path, content_sha256=row.content_sha256
+        ) == content
 
 
 def test_identical_content_reuses_the_file_but_records_each_observation(database):
@@ -135,3 +138,57 @@ def test_different_content_gets_a_different_path(database):
 
     files = list((database.raw_dir / "football_data_org").rglob("*.json"))
     assert len(files) == 2
+
+
+def test_equal_size_archive_tampering_is_rejected(database):
+    provider_id = _provider_id()
+    archive = RawArchive(
+        provider_code="football_data_org",
+        provider_id=provider_id,
+        storage_root=database.raw_dir,
+    )
+    content = b'{"a": 1}'
+    archive.store(_response(content), resource_type="matches")
+    digest = hashlib.sha256(content).hexdigest()
+    path = database.raw_dir / "football_data_org" / digest[:2] / f"{digest}.json"
+    path.write_bytes(b'{"b": 1}')
+    with pytest.raises(ArchiveError, match="digest mismatch"):
+        archive.store(_response(content), resource_type="matches")
+    with pytest.raises(ArchiveError, match="digest mismatch"):
+        archive.read(storage_path=str(path.relative_to(database.raw_dir)), content_sha256=digest)
+
+
+def test_provider_code_is_path_safe(database):
+    provider_id = _provider_id()
+    with pytest.raises(ValueError):
+        RawArchive(
+            provider_code="../escape",
+            provider_id=provider_id,
+            storage_root=database.raw_dir,
+        )
+
+
+def test_failed_response_is_still_archived_with_its_http_status(database):
+    provider_id = _provider_id()
+    archive = RawArchive(
+        provider_code="football_data_org",
+        provider_id=provider_id,
+        storage_root=database.raw_dir,
+    )
+    response = RawResponse(
+        url="https://api.example.test/v4/competitions",
+        path="/competitions",
+        params={"dateFrom": "2026-08-01"},
+        status_code=403,
+        headers={"content-type": "application/json"},
+        content=b'{"error":"forbidden"}',
+        fetched_at=datetime(2026, 8, 1, 12, 0, tzinfo=timezone.utc),
+    )
+    payload_id = archive.store(response, resource_type="competitions")
+
+    with session_scope() as session:
+        row = session.get(RawPayload, payload_id)
+        assert row is not None
+        assert row.http_status == 403
+        assert row.content_sha256 == hashlib.sha256(b'{"error":"forbidden"}').hexdigest()
+        assert row.byte_size == len(b'{"error":"forbidden"}')

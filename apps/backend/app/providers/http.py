@@ -15,6 +15,8 @@ import logging
 import random
 import threading
 import time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Callable, Mapping
 
 import httpx
@@ -37,6 +39,64 @@ MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 _MAX_RETRY_AFTER_SECONDS = 60.0
 
 
+class RunBudget:
+    """Per-run transfer budget shared across provider fetches.
+
+    One response is already bounded by ``MAX_RESPONSE_BYTES``; this caps the aggregate
+    bytes and requests consumed by the whole run, so a job fetching many resources
+    cannot exhaust memory, provider quota, or wall-clock time. It is a pure state
+    machine: no clock, no I/O, no provider semantics.
+    """
+
+    def __init__(
+        self, *, max_bytes: int | None = None, max_requests: int | None = None
+    ) -> None:
+        if max_bytes is not None and max_bytes < 0:
+            raise ValueError("max_bytes must not be negative")
+        if max_requests is not None and max_requests < 0:
+            raise ValueError("max_requests must not be negative")
+        self._max_bytes = max_bytes
+        self._max_requests = max_requests
+        self._requests = 0
+        self._bytes = 0
+
+    @property
+    def bytes_used(self) -> int:
+        return self._bytes
+
+    @property
+    def requests_used(self) -> int:
+        return self._requests
+
+    def check_request_allowed(self) -> None:
+        """Raise if one more request would exceed the request budget."""
+
+        limit = self._max_requests
+        if limit is not None and self._requests + 1 > limit:
+            raise ProviderError(
+                f"Provider request budget reached ({limit} requests this run)."
+            )
+
+    def record_response(self, *, byte_count: int, is_error: bool = False) -> None:
+        """Account for one provider response.
+
+        Error responses that will be retried consume no budget, so a provider outage
+        cannot be counted as progress or spend the run's whole allowance.
+        """
+
+        if byte_count < 0:
+            raise ValueError("byte_count must not be negative")
+        if is_error:
+            return
+        self._requests += 1
+        self._bytes += byte_count
+        limit = self._max_bytes
+        if limit is not None and self._bytes > limit:
+            raise ProviderError(
+                f"Provider byte budget exceeded ({limit} bytes this run)."
+            )
+
+
 class TokenBucketRateLimiter:
     """A thread-safe token bucket expressed in requests per minute."""
 
@@ -51,7 +111,7 @@ class TokenBucketRateLimiter:
         if requests_per_minute <= 0:
             raise ValueError("requests_per_minute must be positive")
         self._rate_per_second = requests_per_minute / 60.0
-        self._capacity = float(capacity or max(1, requests_per_minute))
+        self._capacity = float(capacity if capacity is not None else 1)
         self._tokens = self._capacity
         self._clock = clock
         self._sleep = sleeper
@@ -93,6 +153,7 @@ class ProviderHttpClient:
         transport: httpx.BaseTransport | None = None,
         sleeper: Callable[[float], None] = time.sleep,
         rng: random.Random | None = None,
+        budget: RunBudget | None = None,
     ) -> None:
         if max_retries < 0:
             raise ValueError("max_retries must not be negative")
@@ -104,10 +165,12 @@ class ProviderHttpClient:
         self._limiter = rate_limiter
         self._sleep = sleeper
         self._rng = rng or random.Random()
+        self._budget = budget
         self._client = httpx.Client(
             base_url=self._base_url,
             timeout=httpx.Timeout(timeout_seconds),
             transport=transport,
+            trust_env=False,
             headers={
                 "Accept": "application/json",
                 "User-Agent": "football-intelligence-platform/0.1 (data ingestion)",
@@ -117,6 +180,11 @@ class ProviderHttpClient:
     def close(self) -> None:
         self._client.close()
 
+    def set_budget(self, budget: RunBudget | None) -> None:
+        """Attach the budget for the current run (or clear it between runs)."""
+
+        self._budget = budget
+
     def __enter__(self) -> "ProviderHttpClient":
         return self
 
@@ -124,7 +192,11 @@ class ProviderHttpClient:
         self.close()
 
     def get(self, path: str, *, params: Mapping[str, str] | None = None) -> RawResponse:
-        """Fetch one resource, returning the raw body and request metadata."""
+        """Fetch one resource, returning the raw body and request metadata.
+
+        A ``RawResponse`` is produced for every provider response (including 4xx/5xx),
+        so callers can archive failed responses before raising based on ``status_code``.
+        """
 
         if not path.startswith("/"):
             raise ValueError("path must start with '/'")
@@ -137,14 +209,100 @@ class ProviderHttpClient:
 
         while attempt <= self._max_retries:
             self._limiter.acquire()
+            if self._budget is not None:
+                self._budget.check_request_allowed()
             try:
-                response = self._client.get(
-                    path, params=dict(params or {}), headers=request_headers
+                response_context = self._client.stream(
+                    "GET", path, params=dict(params or {}), headers=request_headers
                 )
+                with response_context as response:
+                    status = response.status_code
+
+                    # Reject early if Content-Length is too large, before reading the body.
+                    declared_length = response.headers.get("content-length")
+                    if declared_length is not None:
+                        try:
+                            if int(declared_length) > MAX_RESPONSE_BYTES:
+                                raise ProviderResponseError(
+                                    "Provider response exceeded the size limit."
+                                )
+                        except ValueError:
+                            pass
+
+                    # Read the full body regardless of status; this enables forensic archival.
+                    chunks: list[bytes] = []
+                    received = 0
+                    for chunk in response.iter_bytes():
+                        received += len(chunk)
+                        if received > MAX_RESPONSE_BYTES:
+                            raise ProviderResponseError(
+                                "Provider response exceeded the size limit."
+                            )
+                        chunks.append(chunk)
+
+                    content = b"".join(chunks)
+                    if self._budget is not None:
+                        self._budget.record_response(byte_count=received)
+
+                    raw = RawResponse(
+                        url=str(response.url),
+                        path=path,
+                        params=dict(params or {}),
+                        status_code=status,
+                        headers={k.lower(): v for k, v in response.headers.items()},
+                        content=content,
+                        fetched_at=utc_now(),
+                    )
+
+                    if status == 200:
+                        return raw
+
+                    if status in (401, 403):
+                        raise ProviderAuthenticationError(
+                            "Provider rejected the configured credentials "
+                            f"(HTTP {status}). Check the token and its plan entitlements.",
+                            response=raw,
+                        )
+
+                    if status == 429:
+                        retry_after = _retry_after_seconds(response.headers)
+                        last_error = ProviderRateLimitError(
+                            "Provider rate limit reached (HTTP 429)."
+                        )
+                        if attempt >= self._max_retries:
+                            break
+                        self._log_retry(path, attempt, "rate_limited")
+                        self._sleep(
+                            retry_after
+                            if retry_after is not None
+                            else self._backoff_delay(attempt)
+                        )
+                        attempt += 1
+                        continue
+
+                    if status >= 500:
+                        last_error = ProviderError(
+                            f"Provider returned a server error (HTTP {status}).",
+                            response=raw,
+                        )
+                        if attempt >= self._max_retries:
+                            break
+                        self._log_retry(path, attempt, f"http_{status}")
+                        self._backoff(attempt)
+                        attempt += 1
+                        continue
+
+                    # 400/404/422 etc. are client errors: retrying cannot help.
+                    raise ProviderResponseError(
+                        f"Provider rejected the request (HTTP {status}).",
+                        response=raw,
+                    )
             except httpx.TimeoutException:
                 last_error = ProviderTimeoutError(
                     f"Request to provider timed out after {self._timeout}s."
                 )
+                if attempt >= self._max_retries:
+                    break
                 self._log_retry(path, attempt, "timeout")
                 self._backoff(attempt)
                 attempt += 1
@@ -154,64 +312,12 @@ class ProviderHttpClient:
                 last_error = ProviderError(
                     "Request to provider failed at the transport layer."
                 )
+                if attempt >= self._max_retries:
+                    break
                 self._log_retry(path, attempt, type(exc).__name__)
                 self._backoff(attempt)
                 attempt += 1
                 continue
-
-            status = response.status_code
-
-            if status == 200:
-                content = response.content
-                if len(content) > MAX_RESPONSE_BYTES:
-                    raise ProviderResponseError(
-                        "Provider response exceeded the size limit."
-                    )
-                return RawResponse(
-                    url=str(response.url),
-                    path=path,
-                    params=dict(params or {}),
-                    status_code=status,
-                    headers={k.lower(): v for k, v in response.headers.items()},
-                    content=content,
-                    fetched_at=utc_now(),
-                )
-
-            if status in (401, 403):
-                # A credential problem is not retryable and the body may contain account
-                # detail; do not surface it to a caller.
-                raise ProviderAuthenticationError(
-                    "Provider rejected the configured credentials "
-                    f"(HTTP {status}). Check the token and its plan entitlements."
-                )
-
-            if status == 429:
-                retry_after = _retry_after_seconds(response.headers)
-                last_error = ProviderRateLimitError(
-                    "Provider rate limit reached (HTTP 429)."
-                )
-                if attempt >= self._max_retries:
-                    break
-                self._log_retry(path, attempt, "rate_limited")
-                self._sleep(retry_after if retry_after is not None else self._backoff_delay(attempt))
-                attempt += 1
-                continue
-
-            if status >= 500:
-                last_error = ProviderError(
-                    f"Provider returned a server error (HTTP {status})."
-                )
-                if attempt >= self._max_retries:
-                    break
-                self._log_retry(path, attempt, f"http_{status}")
-                self._backoff(attempt)
-                attempt += 1
-                continue
-
-            # 400/404/422 etc. are client errors: retrying cannot help.
-            raise ProviderResponseError(
-                f"Provider rejected the request (HTTP {status})."
-            )
 
         assert last_error is not None
         raise last_error
@@ -238,16 +344,23 @@ class ProviderHttpClient:
         )
 
 
-def _retry_after_seconds(headers: httpx.Headers) -> float | None:
+def _retry_after_seconds(
+    headers: httpx.Headers, *, now: datetime | None = None
+) -> float | None:
     raw = headers.get("retry-after")
     if raw is None:
         return None
     try:
         seconds = float(raw.strip())
     except (TypeError, ValueError):
-        # An HTTP-date Retry-After cannot be honoured without trusting the host clock
-        # for a long interval; fall back to normal backoff instead.
-        return None
+        try:
+            retry_at = parsedate_to_datetime(raw)
+            if retry_at.tzinfo is None:
+                retry_at = retry_at.replace(tzinfo=timezone.utc)
+            current = now or datetime.now(timezone.utc)
+            seconds = (retry_at - current).total_seconds()
+        except (TypeError, ValueError, OverflowError):
+            return None
     if seconds < 0:
         return None
     return min(seconds, _MAX_RETRY_AFTER_SECONDS)
@@ -273,4 +386,5 @@ def build_http_client(
         backoff_base_seconds=settings.http_backoff_base_seconds,
         rate_limiter=TokenBucketRateLimiter(settings.provider_requests_per_minute),
         transport=transport,
+        budget=RunBudget(max_bytes=64 * 1024 * 1024, max_requests=5_000),
     )

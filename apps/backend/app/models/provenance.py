@@ -275,6 +275,9 @@ class MatchChangeLog(Base):
     sync_run_id: Mapped[int | None] = mapped_column(
         ForeignKey("data_sync_runs.id", ondelete="SET NULL"), nullable=True
     )
+    raw_payload_id: Mapped[int | None] = mapped_column(
+        ForeignKey("raw_payloads.id", ondelete="SET NULL"), nullable=True
+    )
     change_type: Mapped[str] = mapped_column(String(32), nullable=False)
     changed_fields: Mapped[list[str]] = mapped_column(JSON, nullable=False)
     previous_values: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)

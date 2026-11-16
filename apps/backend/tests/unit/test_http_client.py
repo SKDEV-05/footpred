@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 
 import httpx
 import pytest
@@ -161,6 +162,28 @@ def test_oversized_response_is_rejected():
             client.get("/competitions")
 
 
+def test_declared_oversized_response_is_rejected_before_body_read():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"Content-Length": str(MAX_RESPONSE_BYTES + 1)},
+            content=b"{}",
+        )
+
+    with build_client(handler) as client:
+        with pytest.raises(ProviderResponseError):
+            client.get("/competitions")
+
+
+def test_response_exactly_at_limit_is_accepted():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"x" * MAX_RESPONSE_BYTES)
+
+    with build_client(handler) as client:
+        response = client.get("/competitions")
+    assert len(response.content) == MAX_RESPONSE_BYTES
+
+
 def test_path_must_be_absolute():
     with build_client(lambda request: httpx.Response(200)) as client:
         with pytest.raises(ValueError):
@@ -181,21 +204,67 @@ def test_token_bucket_waits_for_capacity():
     assert clock.sleeps[0] == pytest.approx(1.0, rel=1e-6)
 
 
-def test_token_bucket_default_capacity_allows_one_minute_burst():
+def test_token_bucket_default_capacity_is_conservative():
     clock = FakeTime()
     limiter = TokenBucketRateLimiter(10, clock=clock.clock, sleeper=clock.sleep)
 
-    for _ in range(10):
-        limiter.acquire()
-    assert clock.sleeps == []
-    # The next request must wait for the bucket to refill.
+    limiter.acquire()
+    # The default capacity is one; subsequent requests are spaced by the rate.
     limiter.acquire()
     assert len(clock.sleeps) == 1
 
 
-def test_retry_after_parsing_ignores_http_dates():
+def test_retry_after_parsing_supports_numeric_and_http_dates():
     headers = httpx.Headers({"retry-after": "5"})
     assert _retry_after_seconds(headers) == 5.0
     assert _retry_after_seconds(httpx.Headers({})) is None
-    assert _retry_after_seconds(httpx.Headers({"retry-after": "Wed, 21 Oct 2026 07:28:00 GMT"})) is None
+    assert _retry_after_seconds(
+        httpx.Headers({"retry-after": "Wed, 21 Oct 2026 07:28:00 GMT"}),
+        now=datetime(2026, 10, 21, 7, 27, tzinfo=timezone.utc),
+    ) == pytest.approx(60.0)
     assert _retry_after_seconds(httpx.Headers({"retry-after": "-1"})) is None
+
+
+def test_aggregate_byte_budget_aborts_a_run():
+    """A run that accumulates too many bytes is stopped, not just one response."""
+
+    from app.providers.http import RunBudget
+
+    budget = RunBudget(max_bytes=10)
+    client = ProviderHttpClient(
+        base_url="https://api.example.test/v4",
+        timeout_seconds=5.0,
+        max_retries=0,
+        backoff_base_seconds=0.01,
+        rate_limiter=TokenBucketRateLimiter(60000, sleeper=lambda _: None),
+        transport=httpx.MockTransport(lambda req: httpx.Response(200, content=b"x" * 8)),
+        sleeper=lambda _: None,
+        budget=budget,
+    )
+    with client:
+        client.get("/a")  # 8 bytes, within budget
+        with pytest.raises(ProviderError, match="byte budget"):
+            client.get("/b")  # 8 + 8 = 16 > 10
+
+
+def test_aggregate_request_budget_aborts_a_run():
+    """A run that makes too many requests is stopped."""
+
+    from app.providers.http import RunBudget
+
+    budget = RunBudget(max_requests=2)
+    client = ProviderHttpClient(
+        base_url="https://api.example.test/v4",
+        timeout_seconds=5.0,
+        max_retries=0,
+        backoff_base_seconds=0.01,
+        rate_limiter=TokenBucketRateLimiter(60000, sleeper=lambda _: None),
+        transport=httpx.MockTransport(lambda req: httpx.Response(200, content=b"{}")),
+        sleeper=lambda _: None,
+        budget=budget,
+    )
+    with client:
+        client.get("/a")
+        client.get("/b")
+        with pytest.raises(ProviderError, match="request budget"):
+            client.get("/c")

@@ -43,6 +43,10 @@ installed, tested, or supported in Phase 3; see `ADR-0003`.
 | --- | --- | --- |
 | `RAW_STORAGE_DIR` | `./data/raw` | Root for content-addressed provider payloads |
 
+Relative `DATABASE_URL` paths, `RAW_STORAGE_DIR`, and the `env_file` location are resolved
+against the repository root, not the process working directory. The API, the worker, and
+`app.cli` therefore read and write the same files when started from anywhere.
+
 Files are written under `<dir>/<provider_code>/<first-two-hash-chars>/<sha256>.<ext>`. The
 archive is committed before parsing. Back it up with the database; a database row whose file is
 missing is an audit gap. See `docs/data/data-provenance.md`.
@@ -87,7 +91,7 @@ the quota and cannot succeed.
 | `SYNC_ENABLED` | `false` | The worker schedules nothing unless this is true |
 | `SYNC_INTERVAL_MINUTES` | `60` | Base interval for the fixtures job |
 | `SYNC_LOOKBACK_DAYS` | `3` | Days before today included in fixture/result windows |
-| `SYNC_LOOKAHEAD_DAYS` | `14` | Days after today included in the fixture window |
+| `SYNC_LOOKAHEAD_DAYS` | `30` | Days after today included in the fixture window |
 | `SYNC_COMPETITION_IDS` | empty | Comma-separated provider competition codes. Empty means "all competitions the plan returns", which is rarely what an operator wants |
 | `SYNC_STATISTICS_LIMIT_PER_RUN` | `25` | Maximum finished matches whose statistics are requested in one run |
 | `SYNC_STALE_RUN_AFTER_MINUTES` | `360` | A `running` run older than this is treated as abandoned and marked failed at the next worker start |

@@ -1,5 +1,6 @@
 """Import every model so SQLAlchemy metadata and Alembic see the full schema."""
 
+from app.models.analysis import AnalysisStatus, MatchAnalysis
 from app.models.core import Competition, Country, Match, MatchResult, Season, Team
 from app.models.enums import (
     FINAL_STATUSES,
@@ -24,6 +25,7 @@ from app.models.provenance import (
 from app.models.statistics import TeamMatchStatistics
 
 __all__ = [
+    "AnalysisStatus",
     "Competition",
     "CompetitionType",
     "Country",
@@ -32,6 +34,7 @@ __all__ = [
     "DataSyncRun",
     "FINAL_STATUSES",
     "Match",
+    "MatchAnalysis",
     "MatchChangeLog",
     "MatchDuration",
     "MatchResult",

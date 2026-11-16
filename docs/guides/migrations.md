@@ -1,8 +1,9 @@
 # Migrations Guide
 
 **Scope:** creating and applying schema migrations for the SQLite database.
-**Verified:** 2026-11-13. `upgrade head` built all 17 tables; `alembic check` reported no drift;
-an integration test runs the migration against a temporary database.
+**Verified:** 2026-11-15. `upgrade head` built all 17 tables and revision `0004`;
+`alembic check` reported no drift; the full test suite passes; an integration test runs the
+migration against a temporary database.
 **Decisions:** `ADR-0003` (SQLite), `docs/architecture/database-design.md`.
 
 ## 1. How the environment is wired

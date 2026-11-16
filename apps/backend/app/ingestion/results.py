@@ -28,6 +28,7 @@ def upsert_result(
     status: MatchStatus,
     provider_last_updated,
     sync_run_id: int | None,
+    raw_payload_id: int | None = None,
 ) -> UpsertResult | None:
     """Persist a final result. Returns ``None`` when the match is not final."""
 
@@ -41,6 +42,10 @@ def upsert_result(
     income: dict[str, Any] = {
         "home_score": score.home,
         "away_score": score.away,
+        "extra_home_score": score.extra_home,
+        "extra_away_score": score.extra_away,
+        "shootout_home_score": score.penalties_home,
+        "shootout_away_score": score.penalties_away,
         "ht_home_score": score.ht_home,
         "ht_away_score": score.ht_away,
         "winner": match_winner(score.winner) if score.winner else None,
@@ -48,6 +53,7 @@ def upsert_result(
         "status": status,
         "is_final": True,
         "provider_last_updated": provider_last_updated,
+        "raw_payload_id": raw_payload_id,
     }
 
     existing = session.get(MatchResult, match_id)
@@ -81,6 +87,7 @@ def upsert_result(
             previous_values=change.previous,
             new_values=change.new,
             provider_last_updated=provider_last_updated,
+            raw_payload_id=raw_payload_id,
             created_at=utc_now(),
         )
     )
@@ -92,6 +99,10 @@ def _snapshot(result: MatchResult) -> Mapping[str, Any]:
     return {
         "home_score": result.home_score,
         "away_score": result.away_score,
+        "extra_home_score": result.extra_home_score,
+        "extra_away_score": result.extra_away_score,
+        "shootout_home_score": result.shootout_home_score,
+        "shootout_away_score": result.shootout_away_score,
         "ht_home_score": result.ht_home_score,
         "ht_away_score": result.ht_away_score,
         "winner": result.winner,
@@ -99,4 +110,5 @@ def _snapshot(result: MatchResult) -> Mapping[str, Any]:
         "status": result.status,
         "is_final": result.is_final,
         "provider_last_updated": result.provider_last_updated,
+        "raw_payload_id": result.raw_payload_id,
     }

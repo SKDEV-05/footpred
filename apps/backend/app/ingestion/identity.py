@@ -203,6 +203,7 @@ def resolve_competition(
             code=normalize_code(competition.code),
             type=competition_type,
             country_id=country_id,
+            emblem_url=competition.emblem,
         )
         session.add(candidate)
         session.flush()
@@ -244,6 +245,7 @@ def _competition_snapshot(competition: Competition) -> Mapping[str, Any]:
         "code": competition.code,
         "type": competition.type,
         "country_id": competition.country_id,
+        "emblem_url": competition.emblem_url,
     }
 
 
@@ -264,6 +266,8 @@ def _apply_competition(
         competition.type = competition_type
     if country_id is not None and competition.country_id != country_id:
         competition.country_id = country_id
+    if dto.emblem and competition.emblem_url != dto.emblem:
+        competition.emblem_url = dto.emblem
 
 
 # -- seasons ---------------------------------------------------------------------
@@ -400,6 +404,8 @@ def resolve_team_from_ref(
         country_code=country_code,
         venue_name=None,
         founded=None,
+        crest_url=team.crest,
+        is_authoritative=False,
     )
 
 
@@ -420,6 +426,8 @@ def resolve_team(
         country_code=team.country_code,
         venue_name=team.venue_name,
         founded=team.founded,
+        crest_url=team.crest,
+        is_authoritative=True,
     )
 
 
@@ -435,7 +443,19 @@ def _resolve_team(
     country_code: str | None,
     venue_name: str | None,
     founded: int | None,
+    crest_url: str | None,
+    is_authoritative: bool = True,
 ) -> Resolved:
+    safe_name = clean_display_name(name, max_length=160)
+    safe_short_name = (
+        clean_display_name(short_name, max_length=80) if short_name else None
+    )
+    safe_tla = normalize_code(tla)
+    if safe_tla is not None and len(safe_tla) > 8:
+        raise ValueError("team tla exceeds the 8-character limit")
+    safe_venue_name = (
+        clean_display_name(venue_name, max_length=200) if venue_name else None
+    )
     now = utc_now()
     mapping = session.execute(
         select(ProviderTeamMapping).where(
@@ -452,12 +472,23 @@ def _resolve_team(
                 "A provider team mapping points at a missing internal team."
             )
         previous = _team_snapshot(team)
-        _apply_team_enrichment(team, short_name, tla, venue_name, founded)
+        _apply_team_enrichment(
+            session,
+            team,
+            safe_short_name,
+            safe_tla,
+            safe_venue_name,
+            founded,
+            country_name,
+            country_code,
+            crest_url,
+            is_authoritative=is_authoritative,
+        )
         return Resolved(
             team.id, created=False, confidence=mapping.confidence, previous=previous
         )
 
-    display = clean_display_name(name, max_length=160)
+    display = safe_name
     normalized = normalize_name(display)
     country_id = resolve_country(session, name=country_name, code=country_code)
 
@@ -471,11 +502,12 @@ def _resolve_team(
         candidate = Team(
             name=display,
             normalized_name=normalized,
-            short_name=short_name,
-            tla=normalize_code(tla),
+            short_name=safe_short_name,
+            tla=safe_tla,
             country_id=country_id,
-            venue_name=venue_name,
+            venue_name=safe_venue_name,
             founded=founded,
+            crest_url=crest_url,
         )
         session.add(candidate)
         session.flush()
@@ -484,7 +516,18 @@ def _resolve_team(
         previous: Mapping[str, Any] | None = None
     else:
         previous = _team_snapshot(candidate)
-        _apply_team_enrichment(candidate, short_name, tla, venue_name, founded)
+        _apply_team_enrichment(
+            session,
+            candidate,
+            safe_short_name,
+            safe_tla,
+            safe_venue_name,
+            founded,
+            country_name,
+            country_code,
+            crest_url,
+            is_authoritative=is_authoritative,
+        )
         confidence = CONFIDENCE_NATURAL_KEY
 
     _assert_mapping_available(
@@ -519,21 +562,33 @@ def _team_snapshot(team: Team) -> Mapping[str, Any]:
         "country_id": team.country_id,
         "venue_name": team.venue_name,
         "founded": team.founded,
+        "crest_url": team.crest_url,
     }
 
 
 def _apply_team_enrichment(
+    session: Session,
     team: Team,
     short_name: str | None,
     tla: str | None,
     venue_name: str | None,
     founded: int | None,
+    country_name: str | None,
+    country_code: str | None,
+    crest_url: str | None,
+    *,
+    is_authoritative: bool = True,
 ) -> None:
     """Fill or update only fields the provider actually supplied.
 
     The canonical display name is never overwritten by a match-embedded team reference:
     a rename must come from the team resource, and reference renames are recorded as a
     known limitation rather than applied silently from a fixture payload.
+
+    Country attribution follows source precedence: the team resource is authoritative
+    and can update an existing country; a match-embedded team ref is lower-precedence
+    and only fills a country that is currently absent. This prevents a fixture payload
+    from silently overwriting verified country information (F-05 / GAP-017).
     """
 
     if short_name:
@@ -544,6 +599,16 @@ def _apply_team_enrichment(
         team.venue_name = venue_name
     if founded is not None:
         team.founded = founded
+    if crest_url:
+        team.crest_url = crest_url
+    if country_name or country_code:
+        resolved_country_id = resolve_country(
+            session, name=country_name, code=country_code
+        )
+        if is_authoritative:
+            team.country_id = resolved_country_id
+        elif team.country_id is None:
+            team.country_id = resolved_country_id
 
 
 # -- matches ---------------------------------------------------------------------
@@ -560,6 +625,7 @@ def resolve_match(
     away_team_id: int,
     kickoff_utc: datetime,
     kickoff_window_minutes: int,
+    raw_payload_id: int | None = None,
 ) -> Resolved:
     now = utc_now()
     mapping = session.execute(
@@ -607,6 +673,7 @@ def resolve_match(
             status=MatchStatus.SCHEDULED,
             first_seen_at=now,
             last_synced_at=now,
+            raw_payload_id=raw_payload_id,
         )
         session.add(candidate)
         session.flush()

@@ -146,6 +146,14 @@ def validate_match(match: ProviderMatch) -> None:
 
     if match.score is not None:
         issues.extend(_validate_score(match, status))
+    elif status in FINAL_STATUSES:
+        issues.append(
+            ValidationIssue(
+                code="final_without_score",
+                message="a finished/awarded match must include a score object",
+                field="match.score",
+            )
+        )
 
     _raise_if(issues)
 
@@ -180,6 +188,10 @@ def _validate_score(match: ProviderMatch, status: MatchStatus) -> list[Validatio
         ("away", score.away),
         ("ht_home", score.ht_home),
         ("ht_away", score.ht_away),
+        ("extra_home", score.extra_home),
+        ("extra_away", score.extra_away),
+        ("penalties_home", score.penalties_home),
+        ("penalties_away", score.penalties_away),
     ):
         if value is not None and value < 0:
             issues.append(
@@ -205,6 +217,76 @@ def _validate_score(match: ProviderMatch, status: MatchStatus) -> list[Validatio
                 code="incomplete_half_time_score",
                 message="half-time scores must be either both present or both absent",
                 field="match.score",
+            )
+        )
+
+    if (score.extra_home is None) != (score.extra_away is None):
+        issues.append(
+            ValidationIssue(
+                code="incomplete_extra_time_score",
+                message="extra-time scores must be both present or both absent",
+                field="match.score.extraTime",
+            )
+        )
+    if (score.penalties_home is None) != (score.penalties_away is None):
+        issues.append(
+            ValidationIssue(
+                code="incomplete_penalty_score",
+                message="penalty scores must be both present or both absent",
+                field="match.score.penalties",
+            )
+        )
+
+    duration = score.duration.upper() if score.duration else None
+    has_extra = score.extra_home is not None or score.extra_away is not None
+    has_penalties = (
+        score.penalties_home is not None or score.penalties_away is not None
+    )
+    if has_extra and duration not in {"EXTRA_TIME", "PENALTY_SHOOTOUT"}:
+        issues.append(
+            ValidationIssue(
+                code="extra_time_duration_mismatch",
+                message="extra-time scores require an extra-time or shootout duration",
+                field="match.score.duration",
+            )
+        )
+    if has_penalties and duration != "PENALTY_SHOOTOUT":
+        issues.append(
+            ValidationIssue(
+                code="shootout_duration_mismatch",
+                message="penalty scores require a penalty-shootout duration",
+                field="match.score.duration",
+            )
+        )
+    if duration == "PENALTY_SHOOTOUT":
+        if score.penalties_home is None or score.penalties_away is None:
+            issues.append(
+                ValidationIssue(
+                    code="shootout_without_penalties",
+                    message="a penalty shootout requires both penalty tallies",
+                    field="match.score.penalties",
+                )
+            )
+        elif score.penalties_home == score.penalties_away:
+            issues.append(
+                ValidationIssue(
+                    code="tied_shootout",
+                    message="penalty tallies must identify a shootout winner",
+                    field="match.score.penalties",
+                )
+            )
+    if (
+        score.home is not None
+        and score.away is not None
+        and score.extra_home is not None
+        and score.extra_away is not None
+        and (score.extra_home < score.home or score.extra_away < score.away)
+    ):
+        issues.append(
+            ValidationIssue(
+                code="extra_time_below_full_time",
+                message="cumulative extra-time scores cannot be below full-time scores",
+                field="match.score.extraTime",
             )
         )
 
@@ -236,9 +318,9 @@ def _validate_score(match: ProviderMatch, status: MatchStatus) -> list[Validatio
                 )
             )
         else:
-            expected = _expected_winner(score.home, score.away)
+            expected = _expected_winner(score)
             declared = match_winner(score.winner) if score.winner is not None else None
-            if declared is not None and declared.value != expected:
+            if declared is not None and status is not MatchStatus.AWARDED and declared.value != expected:
                 issues.append(
                     ValidationIssue(
                         code="winner_score_mismatch",
@@ -256,7 +338,22 @@ def _validate_score(match: ProviderMatch, status: MatchStatus) -> list[Validatio
     return issues
 
 
-def _expected_winner(home: int, away: int) -> str:
+def _expected_winner(score: ProviderScore) -> str:
+    home = score.home
+    away = score.away
+    if (
+        score.penalties_home is not None
+        and score.penalties_away is not None
+        and score.penalties_home != score.penalties_away
+    ):
+        home, away = score.penalties_home, score.penalties_away
+    elif (
+        score.extra_home is not None
+        and score.extra_away is not None
+        and score.duration in {"EXTRA_TIME", "PENALTY_SHOOTOUT"}
+    ):
+        home, away = score.extra_home, score.extra_away
+    assert home is not None and away is not None
     if home > away:
         return "home_team"
     if away > home:

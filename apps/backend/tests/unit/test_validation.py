@@ -49,6 +49,12 @@ def test_finished_match_without_score_is_rejected():
     assert "final_without_score" in _codes(excinfo.value)
 
 
+def test_finished_match_without_score_object_is_rejected():
+    with pytest.raises(RecordValidationError) as excinfo:
+        validate_match(make_match(status="FINISHED", score=None))
+    assert "final_without_score" in _codes(excinfo.value)
+
+
 def test_incomplete_score_is_rejected():
     with pytest.raises(RecordValidationError) as excinfo:
         validate_match(make_match(status="IN_PLAY", score=make_score(1, None)))
@@ -61,6 +67,48 @@ def test_winner_must_match_score():
             make_match(status="FINISHED", score=make_score(2, 1, winner="AWAY_TEAM"))
         )
     assert "winner_score_mismatch" in _codes(excinfo.value)
+
+
+def test_penalty_shootout_winner_is_checked_against_penalty_score():
+    validate_match(
+        make_match(
+            status="FINISHED",
+            score=make_score(
+                1,
+                1,
+                winner="HOME_TEAM",
+                duration="PENALTY_SHOOTOUT",
+                penalties_home=5,
+                penalties_away=4,
+            ),
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    ("score", "code"),
+    [
+        (make_score(1, 1, duration="PENALTY_SHOOTOUT"), "shootout_without_penalties"),
+        (
+            make_score(1, 1, duration="REGULAR", penalties_home=5, penalties_away=4),
+            "shootout_duration_mismatch",
+        ),
+        (
+            make_score(
+                1,
+                1,
+                duration="PENALTY_SHOOTOUT",
+                penalties_home=4,
+                penalties_away=4,
+            ),
+            "tied_shootout",
+        ),
+    ],
+)
+def test_invalid_shootout_combinations_are_rejected(score, code):
+    with pytest.raises(RecordValidationError) as excinfo:
+        validate_match(make_match(status="FINISHED", score=score))
+    assert code in _codes(excinfo.value)
 
 
 def test_same_team_on_both_sides_is_rejected():
@@ -88,9 +136,8 @@ def test_negative_attendance_is_rejected():
     assert "negative_attendance" in _codes(excinfo.value)
 
 
-def test_unknown_status_is_rejected():
-    with pytest.raises(RecordValidationError):
-        validate_match(make_match(status="ABANDONED"))
+def test_abandoned_status_is_explicitly_supported_without_a_result():
+    validate_match(make_match(status="ABANDONED"))
 
 
 def test_half_time_cannot_exceed_full_time():

@@ -55,6 +55,7 @@ Design rules applied:
 | `code` | varchar(32) | yes | short code, provider-independent |
 | `type` | enum | no | `league`, `league_cup`, `cup`, `playoffs` |
 | `country_id` | FK → `countries.id` | yes | null for international competitions |
+| `emblem_url` | varchar(512) | yes | provider-supplied HTTP(S) URL; null when absent |
 | `created_at`, `updated_at` | datetime | no | |
 
 Indexes: `name`, `normalized_name`, `country_id`. No unique constraint on name: distinct
@@ -91,6 +92,7 @@ The composite key guarantees a match cannot reference a season from another comp
 | `country_id` | FK → `countries.id` | yes | |
 | `venue_name` | varchar(200) | yes | free text; not a venue entity |
 | `founded` | integer | yes | |
+| `crest_url` | varchar(512) | yes | provider-supplied HTTP(S) URL; null when absent |
 | `created_at`, `updated_at` | datetime | no | |
 
 Indexes: `name`, `normalized_name`, `country_id`.

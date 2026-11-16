@@ -46,8 +46,13 @@ class IntelligenceEngine:
             raise ValueError("generated_at must be timezone-aware")
         if generated_at.utcoffset().total_seconds() != 0:
             raise ValueError("generated_at must be UTC")
-        if dataset.classification is not DataClassification.SYNTHETIC_TEST:
-            raise ValueError("Phase 4 offline engine accepts synthetic test data only")
+        if dataset.classification is DataClassification.SYNTHETIC_TEST:
+            pass
+        elif dataset.classification is DataClassification.VERIFIED_REAL:
+            if dataset.evidence is None:
+                raise ValueError("VERIFIED_REAL datasets require a DatasetEvidence block")
+        else:
+            raise ValueError("Phase 4/5 offline engine accepts synthetic_test_data or verified_real_data only")
         if not 0 < form_window <= 1_000 or not 0 < h2h_window <= 1_000:
             raise ValueError("analysis windows must be in [1, 1000]")
         if any(match.match_id == request.match_id for match in dataset.matches):
@@ -107,11 +112,14 @@ class IntelligenceEngine:
         home_quality = assess_sample(home.sample_size, self._policy, context=context)
         away_quality = assess_sample(away.sample_size, self._policy, context=context)
         limitations = [
-            "offline_synthetic_test_only",
             "descriptive_metrics_not_validated_predictors",
             "opponent_strength_not_adjusted",
             "no_squad_or_lineup_information",
         ]
+        if dataset.classification is DataClassification.SYNTHETIC_TEST:
+            limitations.insert(0, "offline_synthetic_test_only")
+        else:
+            limitations.insert(0, "verified_real_data")
         if h2h.sample_size < h2h_window:
             limitations.append("limited_head_to_head_sample")
         if not home_quality.eligible or not away_quality.eligible:

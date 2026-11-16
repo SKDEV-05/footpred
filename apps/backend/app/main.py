@@ -7,9 +7,11 @@ stored data and never contacts a provider during a request.
 from __future__ import annotations
 
 import logging
+import re
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.errors import install_error_handlers
 from app.api.v1.router import api_router
@@ -41,7 +43,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.middleware("http")
     async def _request_id(request: Request, call_next):
         incoming = request.headers.get("X-Request-ID")
-        request_id = incoming if incoming and len(incoming) <= 128 else str(uuid4())
+        request_id = (
+            incoming
+            if incoming and re.fullmatch(r"[A-Za-z0-9._-]{1,64}", incoming)
+            else str(uuid4())
+        )
         token = request_id_var.set(request_id)
         try:
             response = await call_next(request)
@@ -51,6 +57,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return response
 
     install_error_handlers(app)
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+        allow_credentials=False,
+        allow_methods=["GET", "HEAD", "OPTIONS"],
+        allow_headers=["Accept", "Content-Type", "X-Request-ID"],
+    )
 
     @app.get("/health", include_in_schema=False)
     def liveness() -> dict[str, str]:

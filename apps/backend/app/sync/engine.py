@@ -31,6 +31,7 @@ from app.models.provenance import (
     DataSyncError,
     DataSyncRun,
     QuarantinedRecord,
+    RawPayload,
 )
 
 logger = logging.getLogger(__name__)
@@ -66,19 +67,35 @@ class SyncContext:
         provider_id: int | None,
         adapter: Any,
         settings: Settings,
+        parameters: dict[str, Any],
+        session_factory: sessionmaker[Session] | Callable[[], Session],
     ) -> None:
         self.engine = engine
         self.run_id = run_id
         self.provider_id = provider_id
         self.adapter = adapter
         self.settings = settings
+        self.parameters = parameters
+        self._session_factory = session_factory
+        self.raw_payload_ids: set[int] = set()
+
+    def observe_raw_payload(self, payload_id: int | None) -> None:
+        if payload_id is not None:
+            self.raw_payload_ids.add(payload_id)
 
     @contextmanager
     def session(self) -> Iterator[Session]:
         token = sync_run_id_var.set(self.run_id)
         try:
-            with session_scope() as session:
+            session = self._session_factory()
+            try:
                 yield session
+                session.commit()
+            except Exception:
+                session.rollback()
+                raise
+            finally:
+                session.close()
         finally:
             sync_run_id_var.reset(token)
 
@@ -129,6 +146,8 @@ class SyncContext:
         safe_message = _bounded(redact_text(message))
         if self.provider_id is None:
             raise AppError("Cannot quarantine a record without a provider.")
+        if raw_payload_id is not None and session.get(RawPayload, raw_payload_id) is None:
+            raw_payload_id = None
         session.add(
             QuarantinedRecord(
                 provider_id=self.provider_id,
@@ -172,7 +191,7 @@ class SyncContext:
             session,
             stage=stage,
             code=code,
-            message=_bounded(redact_text(message)),
+            message=_safe_record_message(code),
             entity_type=entity_type,
             external_id=external_id,
             raw_payload_id=raw_payload_id,
@@ -232,15 +251,18 @@ class SyncEngine:
         handler: Callable[[SyncContext], None],
         parameters: dict[str, Any] | None = None,
     ) -> SyncRunSummary:
-        run_id = self._start_run(job_type, parameters)
-        token = sync_run_id_var.set(run_id)
         started_at = utc_now()
+        effective_parameters = self._effective_parameters(job_type, parameters, started_at)
+        run_id = self._start_run(job_type, effective_parameters, started_at)
+        token = sync_run_id_var.set(run_id)
         context = SyncContext(
             engine=self,
             run_id=run_id,
             provider_id=self._provider_id,
             adapter=self._adapter,
             settings=self._settings,
+            parameters=effective_parameters,
+            session_factory=self._session_factory,
         )
         failure: str | None = None
         try:
@@ -250,7 +272,7 @@ class SyncEngine:
             )
             handler(context)
         except Exception as exc:  # noqa: BLE001 - every failure must be recorded
-            failure = _describe_failure(exc)
+            failure = _safe_failure_summary(exc)
             logger.exception(
                 "sync run failed",
                 extra={
@@ -264,7 +286,12 @@ class SyncEngine:
         finally:
             sync_run_id_var.reset(token)
 
-        summary = self._finalise(run_id, job_type=job_type, failure=failure)
+        summary = self._finalise(
+            run_id,
+            job_type=job_type,
+            failure=failure,
+            raw_payload_ids=context.raw_payload_ids,
+        )
         logger.info(
             "sync run finished",
             extra={
@@ -281,14 +308,35 @@ class SyncEngine:
 
     # -- internals --------------------------------------------------------------
 
-    def _start_run(self, job_type: str, parameters: dict[str, Any] | None) -> int:
+    def _effective_parameters(
+        self,
+        job_type: str,
+        parameters: dict[str, Any] | None,
+        started_at,
+    ) -> dict[str, Any]:
+        effective = dict(parameters or {})
+        effective["run_started_at"] = started_at.isoformat()
+        effective["competition_ids"] = list(self._settings.competition_ids)
+        effective["sync_lookback_days"] = self._settings.sync_lookback_days
+        effective["sync_lookahead_days"] = self._settings.sync_lookahead_days
+        effective["statistics_limit"] = self._settings.sync_statistics_limit_per_run
+        run_date = started_at.date()
+        if job_type == "fixtures":
+            effective["date_from"] = (run_date - timedelta(days=self._settings.sync_lookback_days)).isoformat()
+            effective["date_to"] = (run_date + timedelta(days=self._settings.sync_lookahead_days)).isoformat()
+        elif job_type == "results":
+            effective["date_from"] = (run_date - timedelta(days=self._settings.sync_lookback_days)).isoformat()
+            effective["date_to"] = run_date.isoformat()
+        return effective
+
+    def _start_run(self, job_type: str, parameters: dict[str, Any], started_at) -> int:
         with self._session_factory() as session:
             run = DataSyncRun(
                 provider_id=self._provider_id,
                 job_type=job_type[:64],
                 status=SyncStatus.RUNNING,
-                started_at=utc_now(),
-                parameters=jsonable(parameters) if parameters else None,
+                started_at=started_at,
+                parameters=jsonable(parameters),
                 records_fetched=0,
                 records_created=0,
                 records_updated=0,
@@ -302,7 +350,7 @@ class SyncEngine:
 
     def _record_job_failure(self, run_id: int, exc: Exception) -> None:
         code = exc.code if isinstance(exc, AppError) else "unexpected_error"
-        message = _bounded(redact_text(_describe_failure(exc)))
+        message = _bounded(_safe_failure_summary(exc))
         try:
             with self._session_factory() as session:
                 run = session.get(DataSyncRun, run_id)
@@ -326,7 +374,12 @@ class SyncEngine:
             )
 
     def _finalise(
-        self, run_id: int, *, job_type: str, failure: str | None
+        self,
+        run_id: int,
+        *,
+        job_type: str,
+        failure: str | None,
+        raw_payload_ids: set[int] | None = None,
     ) -> SyncRunSummary:
         with self._session_factory() as session:
             run = session.get(DataSyncRun, run_id)
@@ -342,6 +395,9 @@ class SyncEngine:
 
             run.status = status
             run.finished_at = utc_now()
+            parameters = dict(run.parameters or {})
+            parameters["raw_payload_ids"] = sorted(raw_payload_ids or set())
+            run.parameters = parameters
             run.error_summary = (
                 _bounded(redact_text(failure)) if failure else _summary_for(run)
             )
@@ -404,12 +460,16 @@ def mark_stale_running_runs(
         return len(stale)
 
 
-def _describe_failure(exc: Exception) -> str:
+def _safe_failure_summary(exc: Exception) -> str:
     if isinstance(exc, RecordValidationError):
-        return f"{exc.code}: {exc.message}"
+        return f"{exc.code}: validation failed"
     if isinstance(exc, AppError):
-        return f"{exc.code}: {exc.message}"
-    return f"{type(exc).__name__}: {exc}"
+        return f"{exc.code}: operation failed"
+    return "unexpected_error: operation failed"
+
+
+def _safe_record_message(code: str) -> str:
+    return f"{code}: operation recorded"
 
 
 def _summary_for(run: DataSyncRun) -> str | None:

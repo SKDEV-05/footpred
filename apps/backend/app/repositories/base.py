@@ -8,7 +8,42 @@ from typing import Generic, Sequence, TypeVar
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
+from app.core.exceptions import RecordValidationError, ValidationIssue
+from app.normalization.names import normalize_name
+
 T = TypeVar("T")
+
+
+def search_term(query: str) -> str:
+    """Normalise a user search string into the comparison key stored on rows.
+
+    Invalid or unsearchable input becomes a structured 422 rather than an empty result,
+    so a typo is never indistinguishable from "no matches exist".
+    """
+
+    try:
+        normalized = normalize_name(query)
+    except ValueError as exc:
+        raise RecordValidationError(
+            [
+                ValidationIssue(
+                    code="invalid_search",
+                    message="search query contains invalid characters",
+                    field="q",
+                )
+            ]
+        ) from exc
+    if not normalized:
+        raise RecordValidationError(
+            [
+                ValidationIssue(
+                    code="empty_search",
+                    message="search query has no searchable characters",
+                    field="q",
+                )
+            ]
+        )
+    return normalized
 
 
 @dataclass(frozen=True)

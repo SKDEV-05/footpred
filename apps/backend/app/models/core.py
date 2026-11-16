@@ -65,6 +65,7 @@ class Competition(TimestampMixin, Base):
     country_id: Mapped[int | None] = mapped_column(
         ForeignKey("countries.id", ondelete="SET NULL"), nullable=True
     )
+    emblem_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
     country: Mapped[Country | None] = relationship(
         back_populates="competitions", viewonly=True
@@ -124,6 +125,7 @@ class Team(TimestampMixin, Base):
     )
     venue_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     founded: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    crest_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
     country: Mapped[Country | None] = relationship(
         back_populates="teams", viewonly=True
@@ -185,6 +187,9 @@ class Match(TimestampMixin, Base):
     provider_last_updated: Mapped[datetime | None] = mapped_column(
         UTCDateTime(), nullable=True
     )
+    raw_payload_id: Mapped[int | None] = mapped_column(
+        ForeignKey("raw_payloads.id", ondelete="SET NULL"), nullable=True
+    )
 
     competition: Mapped[Competition] = relationship(
         foreign_keys=[competition_id], viewonly=True, overlaps="season"
@@ -225,6 +230,26 @@ class MatchResult(TimestampMixin, Base):
             "(ht_home_score IS NOT NULL AND ht_away_score IS NOT NULL)",
             name="half_time_scores_together",
         ),
+        CheckConstraint(
+            "(extra_home_score IS NULL AND extra_away_score IS NULL) OR "
+            "(extra_home_score IS NOT NULL AND extra_away_score IS NOT NULL)",
+            name="extra_time_scores_together",
+        ),
+        CheckConstraint(
+            "(shootout_home_score IS NULL AND shootout_away_score IS NULL) OR "
+            "(shootout_home_score IS NOT NULL AND shootout_away_score IS NOT NULL)",
+            name="shootout_scores_together",
+        ),
+        CheckConstraint(
+            "(extra_home_score IS NULL OR extra_home_score >= 0) AND "
+            "(extra_away_score IS NULL OR extra_away_score >= 0)",
+            name="extra_scores_non_negative",
+        ),
+        CheckConstraint(
+            "(shootout_home_score IS NULL OR shootout_home_score >= 0) AND "
+            "(shootout_away_score IS NULL OR shootout_away_score >= 0)",
+            name="shootout_scores_non_negative",
+        ),
     )
 
     match_id: Mapped[int] = mapped_column(
@@ -232,6 +257,10 @@ class MatchResult(TimestampMixin, Base):
     )
     home_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
     away_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    extra_home_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    extra_away_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    shootout_home_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    shootout_away_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
     ht_home_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
     ht_away_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
     winner: Mapped[MatchWinner | None] = mapped_column(
@@ -248,6 +277,9 @@ class MatchResult(TimestampMixin, Base):
     )
     provider_last_updated: Mapped[datetime | None] = mapped_column(
         UTCDateTime(), nullable=True
+    )
+    raw_payload_id: Mapped[int | None] = mapped_column(
+        ForeignKey("raw_payloads.id", ondelete="SET NULL"), nullable=True
     )
     resolved_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
 

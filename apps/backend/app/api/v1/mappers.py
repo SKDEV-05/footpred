@@ -9,12 +9,13 @@ from __future__ import annotations
 from app.models.core import Competition, Match, Season, Team
 from app.models.statistics import TeamMatchStatistics
 from app.schemas.fixtures import (
+    CompetitionRef,
     FixtureDetail,
     FixtureSummary,
-    IdName,
     ResultOut,
     ScoreOut,
     SeasonRef,
+    TeamRef,
     TeamStatisticsOut,
 )
 from app.schemas.reference import (
@@ -42,6 +43,7 @@ def competition_summary(competition: Competition) -> CompetitionSummary:
         code=competition.code,
         type=competition.type.value,
         country=country_out(competition.country),
+        emblem_url=competition.emblem_url,
     )
 
 
@@ -52,6 +54,7 @@ def competition_detail(competition: Competition, *, season_count: int) -> Compet
         code=competition.code,
         type=competition.type.value,
         country=country_out(competition.country),
+        emblem_url=competition.emblem_url,
         season_count=season_count,
     )
 
@@ -75,6 +78,7 @@ def team_summary(team: Team) -> TeamSummary:
         short_name=team.short_name,
         tla=team.tla,
         country=country_out(team.country),
+        crest_url=team.crest_url,
     )
 
 
@@ -85,6 +89,7 @@ def team_detail(team: Team, *, match_count: int) -> TeamDetail:
         short_name=team.short_name,
         tla=team.tla,
         country=country_out(team.country),
+        crest_url=team.crest_url,
         venue_name=team.venue_name,
         founded=team.founded,
         match_count=match_count,
@@ -104,10 +109,24 @@ def fixture_summary(match: Match) -> FixtureSummary:
 
     return FixtureSummary(
         id=match.id,
-        competition=IdName(id=match.competition.id, name=match.competition.name),
+        competition=CompetitionRef(
+            id=match.competition.id,
+            name=match.competition.name,
+            code=match.competition.code,
+            country=country_out(match.competition.country),
+            emblem_url=match.competition.emblem_url,
+        ),
         season=SeasonRef(id=match.season.id, label=match.season.label),
-        home_team=IdName(id=match.home_team.id, name=match.home_team.name),
-        away_team=IdName(id=match.away_team.id, name=match.away_team.name),
+        home_team=TeamRef(
+            id=match.home_team.id,
+            name=match.home_team.name,
+            crest_url=match.home_team.crest_url,
+        ),
+        away_team=TeamRef(
+            id=match.away_team.id,
+            name=match.away_team.name,
+            crest_url=match.away_team.crest_url,
+        ),
         kickoff_utc=match.kickoff_utc,
         status=match.status.value,
         matchday=match.matchday,
@@ -121,7 +140,7 @@ def fixture_detail(match: Match, *, statistics_available: bool) -> FixtureDetail
     summary = fixture_summary(match)
     result = match.result
     result_out = None
-    if result is not None:
+    if result is not None and result.is_final:
         result_out = ResultOut(
             home_score=result.home_score,
             away_score=result.away_score,
@@ -180,5 +199,4 @@ def sync_run_out(run: DataSyncRun) -> SyncRunOut:
         records_unchanged=run.records_unchanged,
         records_rejected=run.records_rejected,
         error_count=run.error_count,
-        error_summary=run.error_summary,
     )

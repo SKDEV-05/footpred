@@ -28,7 +28,7 @@ def get_session() -> Iterator[Session]:
 
 
 def pagination(
-    page: int = Query(1, ge=1, description="1-based page number."),
+    page: int = Query(1, ge=1, le=10_000, description="1-based page number."),
     page_size: int | None = Query(
         None, ge=1, description="Items per page; capped by API_PAGE_SIZE_MAX."
     ),

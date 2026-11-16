@@ -7,8 +7,10 @@ implied by these tests.
 from __future__ import annotations
 
 from datetime import timedelta
+from math import nan
 
 from sqlalchemy import func, select
+from sqlalchemy.orm import sessionmaker
 
 from app.core.time import utc_now
 from app.database.session import session_scope
@@ -89,6 +91,32 @@ def test_successful_run_records_counts_and_is_idempotent(database):
 
     with session_scope() as session:
         assert session.scalar(select(func.count(DataSyncRun.id))) == 2
+        run = session.get(DataSyncRun, first.run_id)
+        assert run is not None
+        assert run.parameters is not None
+        assert "run_started_at" in run.parameters
+        assert run.parameters["competition_ids"] == []
+        assert run.parameters["raw_payload_ids"] == [1]
+
+
+def test_sync_item_transactions_use_the_engine_session_factory(database):
+    provider_id = _provider()
+    calls = {"count": 0}
+    factory = sessionmaker(bind=database.engine, autoflush=False, expire_on_commit=False)
+
+    def owned_factory():
+        calls["count"] += 1
+        return factory()
+
+    engine = SyncEngine(
+        settings=database.settings,
+        provider_id=provider_id,
+        adapter=FakeAdapter(competitions=(SYNTHETIC_COMPETITION,)),
+        session_factory=owned_factory,
+    )
+    summary = engine.run(job_type="competitions", handler=sync_competitions)
+    assert summary.status is SyncStatus.SUCCESS
+    assert calls["count"] >= 3  # start, item, finalise
 
 
 def test_partial_run_quarantines_a_bad_record_and_keeps_the_good_one(database):
@@ -100,7 +128,13 @@ def test_partial_run_quarantines_a_bad_record_and_keeps_the_good_one(database):
         away=SYNTHETIC_HOME,  # same team on both sides
     )
     adapter = FakeAdapter(matches=(valid, invalid))
-    engine = _engine(database, provider_id, adapter)
+    engine = SyncEngine(
+        # One date chunk keeps the provider double from replaying the same records for
+        # each part of the window; this test is about quarantine, not chunking.
+        settings=database.settings.model_copy(update={"sync_lookahead_days": 0}),
+        provider_id=provider_id,
+        adapter=adapter,
+    )
 
     summary = engine.run(job_type="fixtures", handler=sync_fixtures)
 
@@ -120,6 +154,10 @@ def test_partial_run_quarantines_a_bad_record_and_keeps_the_good_one(database):
         error = session.execute(select(DataSyncError)).scalars().one()
         assert error.sync_run_id == summary.run_id
         assert error.external_id == "8002"
+        run = session.get(DataSyncRun, summary.run_id)
+        assert run is not None
+        assert run.parameters is not None
+        assert run.parameters["date_from"] < run.parameters["date_to"]
 
 
 def test_provider_failure_fails_the_run_and_is_recorded(database):
@@ -173,7 +211,7 @@ def test_teams_job_refuses_without_competition_ids(database):
 
     assert summary.status is SyncStatus.FAILED
     assert summary.failure is not None
-    assert "SYNC_COMPETITION_IDS" in summary.failure
+    assert "missing_competition_ids" in summary.failure
 
 
 def test_statistics_job_stores_metric_rows_and_preserves_missing(database):
@@ -208,6 +246,27 @@ def test_statistics_job_stores_metric_rows_and_preserves_missing(database):
         assert len(rows) == 4
         assert 0.0 in rows.values()  # a measured zero
         assert "shots_on_goal" not in {metric for _, metric in rows}
+
+
+def test_statistics_job_quarantines_one_team_and_keeps_the_other(database):
+    provider_id = _provider()
+    match_id = _seed_finished_fixture(provider_id)
+    detail = make_detail(
+        make_match(external_id="8001", status="FINISHED"),
+        home_metrics={"Shots": 3},
+        away_metrics={"Shots": nan},
+    )
+    adapter = FakeAdapter(details={"8001": detail}, raw_payload_id=None)
+    summary = _engine(database, provider_id, adapter).run(
+        job_type="statistics", handler=sync_statistics
+    )
+    assert summary.status is SyncStatus.PARTIAL
+    with session_scope() as session:
+        rows = session.execute(
+            select(TeamMatchStatistics).where(TeamMatchStatistics.match_id == match_id)
+        ).scalars().all()
+        assert len(rows) == 1
+        assert session.scalar(select(func.count(QuarantinedRecord.id))) == 1
 
 
 def test_statistics_job_quarantines_an_unmapped_team(database):

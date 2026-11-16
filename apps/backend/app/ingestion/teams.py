@@ -31,6 +31,7 @@ def upsert_team(
         "country_id": team.country_id,
         "venue_name": team.venue_name,
         "founded": team.founded,
+        "crest_url": team.crest_url,
     }
     change = diff_fields(resolved.previous or {}, incoming)
     if change.has_changes:

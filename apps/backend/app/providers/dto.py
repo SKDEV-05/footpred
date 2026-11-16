@@ -34,10 +34,16 @@ class RawResponse:
 
 @dataclass(frozen=True)
 class Fetched(Generic[T]):
-    """A parsed payload plus the archive row that proves where it came from."""
+    """A parsed payload plus the archive row that proves where it came from.
+
+    ``skipped`` counts records the provider returned that cannot be stored yet (for
+    example a knockout fixture whose participants are still undecided). They are
+    reported by the job, never silently stored with invented teams.
+    """
 
     items: T
     raw_payload_id: int
+    skipped: int = 0
 
 
 @dataclass(frozen=True)
@@ -57,6 +63,7 @@ class ProviderCompetition:
     type: str
     country_name: str | None = None
     country_code: str | None = None
+    emblem: str | None = None
     seasons: tuple[ProviderSeason, ...] = ()
     current_season: ProviderSeason | None = None
 
@@ -67,6 +74,9 @@ class ProviderTeamRef:
     name: str
     short_name: str | None = None
     tla: str | None = None
+    country_name: str | None = None
+    country_code: str | None = None
+    crest: str | None = None
 
 
 @dataclass(frozen=True)
@@ -79,6 +89,7 @@ class ProviderTeam:
     country_code: str | None = None
     venue_name: str | None = None
     founded: int | None = None
+    crest: str | None = None
 
 
 @dataclass(frozen=True)
@@ -89,6 +100,10 @@ class ProviderScore:
     ht_away: int | None
     winner: str | None
     duration: str | None
+    extra_home: int | None = None
+    extra_away: int | None = None
+    penalties_home: int | None = None
+    penalties_away: int | None = None
 
 
 @dataclass(frozen=True)

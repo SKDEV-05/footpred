@@ -19,6 +19,7 @@ class CompetitionSummary(BaseModel):
     code: str | None
     type: str
     country: CountryOut | None
+    emblem_url: str | None = None
 
 
 class CompetitionDetail(CompetitionSummary):
@@ -41,6 +42,7 @@ class TeamSummary(BaseModel):
     short_name: str | None
     tla: str | None
     country: CountryOut | None
+    crest_url: str | None = None
 
 
 class TeamDetail(TeamSummary):

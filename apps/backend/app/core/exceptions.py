@@ -84,6 +84,18 @@ class ProviderError(AppError):
     code = "provider_error"
     http_status = 502
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        details: Any = None,
+        code: str | None = None,
+        http_status: int | None = None,
+        response: Any = None,
+    ) -> None:
+        super().__init__(message, details=details, code=code, http_status=http_status)
+        self.response = response
+
 
 class ProviderAuthenticationError(ProviderError):
     code = "provider_authentication_failed"

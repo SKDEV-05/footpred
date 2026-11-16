@@ -120,10 +120,14 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(payload, ensure_ascii=False, default=str)
 
 
-def configure_logging(level: str = "INFO") -> None:
-    """Configure the root logger once, without duplicating handlers."""
+def configure_logging(level: str = "INFO", *, stream: Any = None) -> None:
+    """Configure the root logger once, without duplicating handlers.
 
-    handler = logging.StreamHandler(stream=sys.stdout)
+    ``stream`` defaults to stdout for the API/worker. The operator CLI passes stderr so
+    machine-readable command output on stdout is never mixed with log lines.
+    """
+
+    handler = logging.StreamHandler(stream=stream or sys.stdout)
     handler.setFormatter(JsonFormatter())
 
     root = logging.getLogger()

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Path, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import Pagination, get_session, pagination
@@ -25,6 +25,7 @@ from app.schemas.fixtures import FixtureSummary
 from app.schemas.reference import (
     CompetitionDetail,
     CompetitionSummary,
+    CountryOut,
     SeasonSummary,
     TeamDetail,
     TeamSummary,
@@ -34,9 +35,29 @@ from app.validation.rules import validate_date_range
 router = APIRouter(tags=["reference"])
 
 
+@router.get("/countries", response_model=Page[CountryOut])
+def list_countries(
+    page: Pagination = Depends(pagination),
+    session: Session = Depends(get_session),
+) -> Page[CountryOut]:
+    result = reference_repo.list_countries(
+        session, page=page.page, page_size=page.page_size
+    )
+    return Page[CountryOut](
+        items=[
+            CountryOut(id=item.id, name=item.name, iso_code=item.iso_code)
+            for item in result.items
+        ],
+        page=result.page,
+        page_size=result.page_size,
+        total=result.total,
+        has_next=result.has_next,
+    )
+
+
 @router.get("/competitions", response_model=Page[CompetitionSummary])
 def list_competitions(
-    country_id: int | None = None,
+    country_id: int | None = Query(None, ge=1, le=2**63 - 1),
     q: str | None = Query(None, max_length=100),
     page: Pagination = Depends(pagination),
     session: Session = Depends(get_session),
@@ -55,7 +76,7 @@ def list_competitions(
 
 @router.get("/competitions/{competition_id}", response_model=CompetitionDetail)
 def get_competition(
-    competition_id: int,
+    competition_id: int = Path(..., ge=1, le=2**63 - 1),
     session: Session = Depends(get_session),
 ) -> CompetitionDetail:
     competition = reference_repo.get_competition(session, competition_id)
@@ -69,7 +90,7 @@ def get_competition(
 
 @router.get("/seasons", response_model=Page[SeasonSummary])
 def list_seasons(
-    competition_id: int | None = None,
+    competition_id: int | None = Query(None, ge=1, le=2**63 - 1),
     page: Pagination = Depends(pagination),
     session: Session = Depends(get_session),
 ) -> Page[SeasonSummary]:
@@ -90,7 +111,7 @@ def list_seasons(
 
 @router.get("/teams", response_model=Page[TeamSummary])
 def list_teams(
-    country_id: int | None = None,
+    country_id: int | None = Query(None, ge=1, le=2**63 - 1),
     q: str | None = Query(None, max_length=100),
     page: Pagination = Depends(pagination),
     session: Session = Depends(get_session),
@@ -109,7 +130,7 @@ def list_teams(
 
 @router.get("/teams/{team_id}", response_model=TeamDetail)
 def get_team(
-    team_id: int,
+    team_id: int = Path(..., ge=1, le=2**63 - 1),
     session: Session = Depends(get_session),
 ) -> TeamDetail:
     team = reference_repo.get_team(session, team_id)
@@ -122,7 +143,7 @@ def get_team(
 
 @router.get("/teams/{team_id}/matches", response_model=Page[FixtureSummary])
 def get_team_matches(
-    team_id: int,
+    team_id: int = Path(..., ge=1, le=2**63 - 1),
     date_from: date | None = None,
     date_to: date | None = None,
     page: Pagination = Depends(pagination),

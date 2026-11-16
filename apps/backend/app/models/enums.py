@@ -31,6 +31,7 @@ class MatchStatus(StrEnum):
     POSTPONED = "postponed"
     CANCELLED = "cancelled"
     AWARDED = "awarded"
+    ABANDONED = "abandoned"
 
 
 FINAL_STATUSES = frozenset({MatchStatus.FINISHED, MatchStatus.AWARDED})

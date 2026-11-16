@@ -19,7 +19,7 @@ from app.ingestion.outcomes import UpsertOutcome, UpsertResult, diff_fields
 from app.ingestion.results import upsert_result
 from app.models.core import Match
 from app.models.enums import FINAL_STATUSES, MatchStatus
-from app.models.provenance import MatchChangeLog
+from app.models.provenance import MatchChangeLog, RawPayload
 from app.normalization.status import (
     competition_type,
     group_name,
@@ -57,7 +57,10 @@ def upsert_fixture(
     dto: ProviderMatch,
     sync_run_id: int | None,
     kickoff_window_minutes: int,
+    raw_payload_id: int | None = None,
 ) -> FixtureUpsert:
+    if raw_payload_id is not None and session.get(RawPayload, raw_payload_id) is None:
+        raw_payload_id = None
     validate_match(dto)
 
     canonical_status = match_status(dto.status)
@@ -76,21 +79,19 @@ def upsert_fixture(
         season=dto.season,
     )
 
-    country_name = dto.competition.country_name
-    country_code = dto.competition.country_code
     home = resolve_team_from_ref(
         session,
         provider_id=provider_id,
         team=dto.home_team,
-        country_name=country_name,
-        country_code=country_code,
+        country_name=dto.home_team.country_name,
+        country_code=dto.home_team.country_code,
     )
     away = resolve_team_from_ref(
         session,
         provider_id=provider_id,
         team=dto.away_team,
-        country_name=country_name,
-        country_code=country_code,
+        country_name=dto.away_team.country_name,
+        country_code=dto.away_team.country_code,
     )
 
     resolved = resolve_match(
@@ -103,6 +104,7 @@ def upsert_fixture(
         away_team_id=away.entity_id,
         kickoff_utc=dto.kickoff_utc,
         kickoff_window_minutes=kickoff_window_minutes,
+        raw_payload_id=raw_payload_id,
     )
 
     match = session.get(Match, resolved.entity_id)
@@ -130,6 +132,7 @@ def upsert_fixture(
         "venue_name": dto.venue_name,
         "attendance": dto.attendance,
         "provider_last_updated": dto.provider_last_updated,
+        "raw_payload_id": raw_payload_id,
     }
 
     previous = {} if resolved.created else _fixture_snapshot(match)
@@ -153,6 +156,7 @@ def upsert_fixture(
                 previous_values=change.previous,
                 new_values=change.new,
                 provider_last_updated=dto.provider_last_updated,
+                raw_payload_id=raw_payload_id,
                 created_at=utc_now(),
             )
         )
@@ -173,6 +177,15 @@ def upsert_fixture(
             status=canonical_status,
             provider_last_updated=dto.provider_last_updated,
             sync_run_id=sync_run_id,
+            raw_payload_id=raw_payload_id,
+        )
+    elif canonical_status not in FINAL_STATUSES:
+        _invalidate_result_if_needed(
+            session,
+            match_id=match.id,
+            status=canonical_status,
+            sync_run_id=sync_run_id,
+            raw_payload_id=raw_payload_id,
         )
 
     return FixtureUpsert(
@@ -180,6 +193,45 @@ def upsert_fixture(
         outcome=outcome,
         changed_fields=changed_fields,
         result=result,
+    )
+
+
+def _invalidate_result_if_needed(
+    session: Session,
+    *,
+    match_id: int,
+    status: MatchStatus,
+    sync_run_id: int | None,
+    raw_payload_id: int | None,
+) -> None:
+    from app.models.core import MatchResult
+
+    result = session.get(MatchResult, match_id)
+    if result is None:
+        return
+    previous = {"is_final": result.is_final, "status": result.status}
+    changed_fields: list[str] = []
+    if result.is_final:
+        result.is_final = False
+        changed_fields.append("is_final")
+    if result.status != status:
+        result.status = status
+        changed_fields.append("status")
+    result.raw_payload_id = raw_payload_id
+    if not changed_fields:
+        return
+    session.add(
+        MatchChangeLog(
+            match_id=match_id,
+            sync_run_id=sync_run_id,
+            raw_payload_id=raw_payload_id,
+            change_type="result_invalidated",
+            changed_fields=changed_fields,
+            previous_values=previous,
+            new_values={"is_final": False, "status": status},
+            provider_last_updated=None,
+            created_at=utc_now(),
+        )
     )
 
 

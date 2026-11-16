@@ -13,7 +13,7 @@ import httpx
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings
-from app.database.session import get_session_factory, session_scope
+from app.database.session import get_session_factory
 from app.ingestion.outcomes import ensure_data_provider
 from app.ingestion.raw_archive import RawArchive
 from app.providers.adapters.football_data_org import FootballDataOrgAdapter
@@ -44,7 +44,8 @@ def create_provider_runtime(
     """Create the configured provider. Raises if no token is configured."""
 
     factory = session_factory or get_session_factory()
-    with session_scope() as session:
+    session = factory()
+    try:
         provider = ensure_data_provider(
             session,
             code=FOOTBALL_DATA_ORG_CODE,
@@ -52,6 +53,12 @@ def create_provider_runtime(
             base_url=settings.football_data_org_base_url,
         )
         provider_id = provider.id
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
 
     http = build_http_client(settings, transport=transport)
     archive = RawArchive(

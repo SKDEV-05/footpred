@@ -7,6 +7,7 @@ measured zero is stored as zero.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from math import inf, nan
 
 import pytest
 from sqlalchemy import func, select
@@ -15,7 +16,7 @@ from app.core.exceptions import RecordValidationError
 from app.ingestion.fixtures import upsert_fixture
 from app.ingestion.outcomes import UpsertOutcome, ensure_data_provider
 from app.ingestion.statistics import upsert_statistics
-from app.models.core import Match, MatchResult
+from app.models.core import Match, MatchResult, Team
 from app.models.enums import MatchStatus
 from app.models.provenance import MatchChangeLog
 from app.models.statistics import TeamMatchStatistics
@@ -25,6 +26,7 @@ from tests.factories import (
     make_match,
     make_score,
 )
+from app.providers.dto import ProviderCompetition, ProviderSeason, ProviderTeam, ProviderTeamRef
 
 
 def _provider(session) -> int:
@@ -51,7 +53,6 @@ def test_creating_a_fixture_builds_reference_data_once(session):
     assert first.outcome is UpsertOutcome.CREATED
     assert first.created is True
     assert first.result is None
-
     match = session.get(Match, first.match_id)
     assert match is not None
     assert match.status is MatchStatus.SCHEDULED
@@ -60,10 +61,152 @@ def test_creating_a_fixture_builds_reference_data_once(session):
     assert match.competition.name == "Example League"
     assert match.season.label == "2026/2027"
     assert match.stage == "regular_season"
-
     assert session.scalar(select(func.count(Match.id))) == 1
     assert session.scalar(select(func.count(MatchChangeLog.id))) == 0
 
+
+def test_international_competition_does_not_assign_its_country_to_teams(session):
+    provider_id = _provider(session)
+    season = ProviderSeason(
+        external_id="7002",
+        start_date=datetime(2026, 8, 1).date(),
+        end_date=datetime(2027, 5, 31).date(),
+        current_matchday=None,
+        is_current=True,
+    )
+    competition = ProviderCompetition(
+        external_id="9002",
+        name="International Cup",
+        code="IC",
+        type="CUP",
+        country_name="Neutralia",
+        country_code="NU",
+        seasons=(season,),
+    )
+    home = ProviderTeamRef(
+        external_id="601",
+        name="Home Country FC",
+        tla="HCF",
+        country_name="Home Country",
+        country_code="HC",
+    )
+    away = ProviderTeamRef(
+        external_id="602",
+        name="Away Country FC",
+        tla="ACF",
+        country_name="Away Country",
+        country_code="AC",
+    )
+    result = _upsert(
+        session,
+        provider_id,
+        make_match(
+            external_id="8100",
+            competition=competition,
+            season=season,
+            home=home,
+            away=away,
+        ),
+    )
+    match = session.get(Match, result.match_id)
+    assert match is not None
+    assert match.home_team.country.name == "Home Country"
+    assert match.away_team.country.name == "Away Country"
+
+
+def test_match_embedded_ref_does_not_overwrite_authoritative_team_country(session):
+    """A match-embedded team ref cannot overwrite a country set by the team resource (F-05).
+
+    Source precedence: the team resource is authoritative; a fixture payload is
+    lower-precedence and only fills a country that is currently absent.
+    """
+    from app.ingestion.teams import upsert_team
+
+    provider_id = _provider(session)
+
+    # 1. Ingest the team from the authoritative team resource with a real country.
+    authoritative = ProviderTeam(
+        external_id="501",
+        name="Example Home FC",
+        short_name="Home",
+        tla="EXH",
+        country_name="Examplia",
+        country_code="EX",
+        venue_name="Example Stadium",
+        founded=1990,
+    )
+    upsert_team(session, provider_id=provider_id, dto=authoritative)
+
+    home = session.execute(
+        select(Team).where(Team.normalized_name == "example home fc")
+    ).scalars().one()
+    assert home.country is not None
+    assert home.country.name == "Examplia"
+    examplia_id = home.country_id
+
+    # 2. A later fixture embeds the same team ref with a DIFFERENT country (wrong/competing).
+    competing_ref = ProviderTeamRef(
+        external_id="501",
+        name="Example Home FC",
+        tla="EXH",
+        country_name="Wrongland",
+        country_code="WL",
+    )
+    away = ProviderTeamRef(
+        external_id="502",
+        name="Example Away FC",
+        tla="EXA",
+        country_name="Examplia",
+        country_code="EX",
+    )
+    _upsert(
+        session,
+        provider_id,
+        make_match(external_id="8001", home=competing_ref, away=away),
+    )
+
+    # 3. The authoritative country must survive; the competing ref is ignored.
+    home_after = session.execute(
+        select(Team).where(
+            Team.normalized_name == "example home fc"
+        )
+    ).scalars().one()
+    assert home_after.country_id == examplia_id
+    assert home_after.country.name == "Examplia"
+
+
+def test_match_embedded_ref_fills_a_missing_team_country(session):
+    """A match-embedded ref still fills a country when none exists yet (F-05)."""
+    provider_id = _provider(session)
+
+    # Create a team with no country via a fixture whose ref also has no country.
+    home = ProviderTeamRef(
+        external_id="510", name="No Country FC", tla="NC", country_name=None, country_code=None
+    )
+    away = ProviderTeamRef(
+        external_id="511", name="Other FC", tla="OF", country_name="Examplia", country_code="EX"
+    )
+    _upsert(session, provider_id, make_match(external_id="8200", home=home, away=away))
+
+    team = session.execute(
+        select(Team).where(Team.normalized_name == "no country fc")
+    ).scalars().one()
+    assert team.country_id is None
+
+    # A later fixture embeds a country for the same team ref; it fills the gap.
+    home_with_country = ProviderTeamRef(
+        external_id="510", name="No Country FC", tla="NC", country_name="Examplia", country_code="EX"
+    )
+    _upsert(
+        session,
+        provider_id,
+        make_match(external_id="8200", home=home_with_country, away=away),
+    )
+    team_after = session.execute(
+        select(Team).where(Team.normalized_name == "no country fc")
+    ).scalars().one()
+    assert team_after.country_id is not None
+    assert team_after.country.name == "Examplia"
 
 def test_repeating_the_same_fixture_is_a_no_op(session):
     provider_id = _provider(session)
@@ -272,6 +415,32 @@ def test_statistics_distinguish_missing_from_zero(session):
     assert refreshed == {"ball_possession": 56.0, "fouls": 0.0}
 
 
+def test_result_preserves_extra_time_and_shootout_components(session):
+    provider_id = _provider(session)
+    fixture = _upsert(
+        session,
+        provider_id,
+        make_match(
+            status="FINISHED",
+            score=make_score(
+                1,
+                1,
+                winner="HOME_TEAM",
+                duration="PENALTY_SHOOTOUT",
+                extra_home=2,
+                extra_away=2,
+                penalties_home=5,
+                penalties_away=4,
+            ),
+        ),
+    )
+    result = session.get(MatchResult, fixture.match_id)
+    assert result is not None
+    assert (result.home_score, result.away_score) == (1, 1)
+    assert (result.extra_home_score, result.extra_away_score) == (2, 2)
+    assert (result.shootout_home_score, result.shootout_away_score) == (5, 4)
+
+
 def test_colliding_metric_keys_with_different_values_are_rejected(session):
     provider_id = _provider(session)
     fixture = _upsert(session, provider_id, make_match())
@@ -284,6 +453,42 @@ def test_colliding_metric_keys_with_different_values_are_rejected(session):
             match_id=fixture.match_id,
             team_id=match.home_team_id,
             metrics={"Ball Possession": 55, "ball_possession": 56},
+            provider_last_updated=None,
+            raw_payload_id=None,
+            sync_run_id=None,
+        )
+
+
+def test_statistics_reject_non_participant_and_invalid_values(session):
+    provider_id = _provider(session)
+    fixture = _upsert(session, provider_id, make_match())
+    match = session.get(Match, fixture.match_id)
+    assert match is not None
+    third = ProviderTeamRef(external_id="503", name="Third Example FC", tla="EXT")
+    unrelated = _upsert(
+        session,
+        provider_id,
+        make_match(external_id="8003", home=third, away=SYNTHETIC_HOME),
+    )
+    unrelated_match = session.get(Match, unrelated.match_id)
+    assert unrelated_match is not None
+
+    with pytest.raises(RecordValidationError, match="participant"):
+        upsert_statistics(
+            session,
+            match_id=fixture.match_id,
+            team_id=unrelated_match.home_team_id,
+            metrics={"shots": 1},
+            provider_last_updated=None,
+            raw_payload_id=None,
+            sync_run_id=None,
+        )
+    with pytest.raises(RecordValidationError):
+        upsert_statistics(
+            session,
+            match_id=fixture.match_id,
+            team_id=match.home_team_id,
+            metrics={"shots": nan, "fouls": inf},
             provider_last_updated=None,
             raw_payload_id=None,
             sync_run_id=None,

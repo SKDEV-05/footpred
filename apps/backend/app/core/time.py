@@ -49,7 +49,7 @@ def get_timezone(name: str) -> ZoneInfo:
             [
                 ValidationIssue(
                     code="invalid_timezone",
-                    message=f"Unknown IANA timezone: {name}",
+                    message="Unknown IANA timezone.",
                     field="timezone",
                 )
             ]

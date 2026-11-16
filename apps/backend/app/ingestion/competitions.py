@@ -36,6 +36,7 @@ def upsert_competition(
         "code": competition.code,
         "type": competition.type,
         "country_id": competition.country_id,
+        "emblem_url": competition.emblem_url,
     }
     change = diff_fields(resolved.previous or {}, incoming)
     if change.has_changes:

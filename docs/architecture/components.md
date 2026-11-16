@@ -104,7 +104,7 @@ Rules enforced by review and tests:
 | Ambiguous identity | `ingestion.identity` | Quarantine + rejected count |
 | Duplicate constraint | Ingestion/persistence | Quarantine + rejected count |
 | Database outage | `database.session` | Failed run; API 503 |
-| Stale data | `sync` + health endpoint | `data_is_stale`, last success timestamp |
+| Stale data | `sync` status endpoint | per-job freshness and `data_is_stale`; health exposes liveness/readiness only |
 | API contract misuse | `api` | 404/422 in the common envelope |
 
 ## 5. Deliberately not separated

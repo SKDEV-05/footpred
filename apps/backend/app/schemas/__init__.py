@@ -6,6 +6,7 @@ a product decision, not a mirror of storage or of a vendor payload.
 
 from app.schemas.common import ErrorDetail, ErrorEnvelope, Page, UtcDatetime
 from app.schemas.fixtures import (
+    CompetitionRef,
     FixtureDetail,
     FixtureSummary,
     IdName,
@@ -13,6 +14,7 @@ from app.schemas.fixtures import (
     ResultOut,
     ScoreOut,
     SeasonRef,
+    TeamRef,
     TeamStatisticsOut,
     TodayResponse,
 )
@@ -33,6 +35,7 @@ from app.schemas.sync import (
 
 __all__ = [
     "CompetitionDetail",
+    "CompetitionRef",
     "CompetitionSummary",
     "CountryOut",
     "ErrorDetail",
@@ -51,6 +54,7 @@ __all__ = [
     "SyncRunOut",
     "SyncStatusOut",
     "TeamDetail",
+    "TeamRef",
     "TeamStatisticsOut",
     "TeamSummary",
     "TodayResponse",
