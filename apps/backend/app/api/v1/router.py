@@ -6,11 +6,12 @@ Route order matters: the literal ``/fixtures/today`` must be registered before t
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import analysis, fixtures, health, reference, sync
+from app.api.v1.endpoints import analysis, evaluation, fixtures, health, reference, sync
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(health.router)
 api_router.include_router(analysis.router)
+api_router.include_router(evaluation.router)
 api_router.include_router(fixtures.router)
 api_router.include_router(reference.router)
 api_router.include_router(sync.router)

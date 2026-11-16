@@ -2,6 +2,7 @@
 
 from app.models.analysis import AnalysisStatus, MatchAnalysis
 from app.models.core import Competition, Country, Match, MatchResult, Season, Team
+from app.models.evaluation import ModelEvaluation
 from app.models.enums import (
     FINAL_STATUSES,
     CompetitionType,
@@ -35,6 +36,7 @@ __all__ = [
     "FINAL_STATUSES",
     "Match",
     "MatchAnalysis",
+    "ModelEvaluation",
     "MatchChangeLog",
     "MatchDuration",
     "MatchResult",

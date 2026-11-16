@@ -10,7 +10,7 @@ instead of being certified with placeholder values.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Sequence
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -31,38 +31,26 @@ class DatasetProvenanceError(ValueError):
     """Stored results cannot be tied to archived provider payloads."""
 
 
+# Above this gap between kickoff and the first local observation, the result was almost
+# certainly backfilled rather than recorded live. The threshold is a documented
+# heuristic, not a provider fact.
+RECONSTRUCTED_OBSERVATION_GAP_HOURS = 24
+
+
 def _aware(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)
 
 
-def load_point_in_time_dataset(
-    session: Session,
-    *,
-    fixture: Match,
-    as_of: datetime,
-) -> tuple[IntelligenceDataset | None, dict[str, Any]]:
-    """Load results observed strictly before ``as_of`` and the target kickoff.
-
-    A result row is eligible only when the current score was first recorded before
-    ``as_of`` (``MatchResult.resolved_at``). ``Match.last_synced_at`` is not used: it
-    changes on every refresh even when the score did not, which would make identical
-    analyses non-reproducible.
-    """
-
-    as_of = _aware(as_of)
-    target_kickoff = _aware(fixture.kickoff_utc)
-    if as_of >= target_kickoff:
-        raise ValueError("analysis as_of must be before the target kickoff")
-
-    query = (
+def _result_query(*conditions: Any):
+    return (
         select(Match, MatchResult)
         .join(MatchResult, MatchResult.match_id == Match.id)
         .where(
             Match.status == MatchStatus.FINISHED,
-            Match.kickoff_utc < target_kickoff,
-            MatchResult.resolved_at < as_of,
+            *conditions,
+            MatchResult.resolved_at.isnot(None),
             MatchResult.home_score.isnot(None),
             MatchResult.away_score.isnot(None),
             # Only regulation-time results belong to the contract. Extra time and
@@ -74,27 +62,64 @@ def load_point_in_time_dataset(
         )
         .order_by(Match.kickoff_utc.asc(), Match.id.asc())
     )
-    rows = session.execute(query).all()
 
-    excluded_extra_time = session.execute(
+
+def _count_excluded(session: Session, *conditions: Any) -> int:
+    query = (
         select(func.count())
         .select_from(Match)
         .join(MatchResult, MatchResult.match_id == Match.id)
         .where(
             Match.status == MatchStatus.FINISHED,
-            Match.kickoff_utc < target_kickoff,
-            MatchResult.resolved_at < as_of,
+            *conditions,
             (
                 MatchResult.extra_home_score.isnot(None)
                 | MatchResult.shootout_home_score.isnot(None)
             ),
         )
-    ).scalar_one()
+    )
+    return int(session.execute(query).scalar_one())
 
+
+def observation_confidence(
+    *,
+    observed_at: datetime,
+    kickoff_utc: datetime,
+) -> dict[str, Any]:
+    """Classify how trustworthy one observation timestamp is.
+
+    ``resolved_at`` records when *this platform* first stored the current score. It is
+    not the provider's publication time. When a result was backfilled long after the
+    match, the timestamp is reconstructed and must not be presented as live evidence.
+    """
+
+    gap_hours = (observed_at - kickoff_utc).total_seconds() / 3600.0
+    if gap_hours <= RECONSTRUCTED_OBSERVATION_GAP_HOURS:
+        return {
+            "classification": "recorded_after_kickoff",
+            "method": "local_ingestion_timestamp",
+            "gap_hours": round(gap_hours, 3),
+        }
+    return {
+        "classification": "reconstructed_from_backfill",
+        "method": "local_ingestion_timestamp_after_bulk_retrieval",
+        "gap_hours": round(gap_hours, 3),
+    }
+
+
+def _build_dataset(
+    session: Session,
+    *,
+    rows: Sequence[Any],
+    as_of: datetime,
+    dataset_prefix: str,
+    excluded_extra_time: int,
+) -> tuple[IntelligenceDataset | None, dict[str, Any]]:
     historical_matches: list[HistoricalMatch] = []
     raw_payload_ids: set[int] = set()
     kickoffs: list[datetime] = []
     observations: list[datetime] = []
+    reconstructed = 0
 
     for match, result in rows:
         kickoff = _aware(match.kickoff_utc)
@@ -105,6 +130,12 @@ def load_point_in_time_dataset(
         for payload_id in (match.raw_payload_id, result.raw_payload_id):
             if payload_id is not None:
                 raw_payload_ids.add(payload_id)
+
+        confidence = observation_confidence(
+            observed_at=observed_at, kickoff_utc=kickoff
+        )
+        if confidence["classification"] == "reconstructed_from_backfill":
+            reconstructed += 1
 
         kickoffs.append(kickoff)
         observations.append(observed_at)
@@ -125,11 +156,9 @@ def load_point_in_time_dataset(
             )
         )
 
+    observed_total = len(historical_matches)
     meta: dict[str, Any] = {
-        "historical_matches": len(historical_matches),
-        "competition_matches": sum(
-            1 for item in historical_matches if item.competition_id == str(fixture.competition_id)
-        ),
+        "historical_matches": observed_total,
         "excluded_extra_time_or_shootout": int(excluded_extra_time),
         "earliest_kickoff": kickoffs[0].isoformat() if kickoffs else None,
         "latest_kickoff": kickoffs[-1].isoformat() if kickoffs else None,
@@ -137,6 +166,14 @@ def load_point_in_time_dataset(
         "latest_observed": max(observations).isoformat() if observations else None,
         "raw_payload_count": 0,
         "provider_code": None,
+        "observation_confidence": (
+            "reconstructed_from_backfill"
+            if reconstructed and reconstructed == observed_total
+            else "mixed"
+            if reconstructed
+            else "recorded_after_kickoff"
+        ),
+        "reconstructed_observations": reconstructed,
     }
 
     if not historical_matches:
@@ -167,15 +204,13 @@ def load_point_in_time_dataset(
         )
 
     retrieval_from = min(fetched)
-    retrieval_to = as_of
-    if retrieval_from >= retrieval_to:
+    if retrieval_from >= as_of:
         raise DatasetProvenanceError(
             "Raw payload retrieval time is not before the analysis checkpoint."
         )
 
     observed_from = min(observations)
-    observed_to = as_of
-    if observed_from >= observed_to:
+    if observed_from >= as_of:
         raise DatasetProvenanceError(
             "Result observation time is not before the analysis checkpoint."
         )
@@ -183,16 +218,16 @@ def load_point_in_time_dataset(
     content_digest = materialized_content_digest(
         historical_matches, DataClassification.VERIFIED_REAL
     )
-    dataset_id = f"ds_match_{fixture.id}_{content_digest[:16]}"
+    dataset_id = f"{dataset_prefix}_{content_digest[:16]}"
 
     provisional_evidence = DatasetEvidence(
         provider_code=provider_codes[0],
         raw_payload_ids=tuple(sorted(raw_payload_ids)),
         retrieval_from_utc=retrieval_from,
-        retrieval_to_utc=retrieval_to,
+        retrieval_to_utc=as_of,
         payload_digest="0" * 64,
         observed_from_utc=observed_from,
-        observed_to_utc=observed_to,
+        observed_to_utc=as_of,
     )
     provisional = IntelligenceDataset(
         dataset_id=dataset_id,
@@ -206,10 +241,10 @@ def load_point_in_time_dataset(
         provider_code=provider_codes[0],
         raw_payload_ids=tuple(sorted(raw_payload_ids)),
         retrieval_from_utc=retrieval_from,
-        retrieval_to_utc=retrieval_to,
+        retrieval_to_utc=as_of,
         payload_digest=payload_digest,
         observed_from_utc=observed_from,
-        observed_to_utc=observed_to,
+        observed_to_utc=as_of,
     )
     dataset = IntelligenceDataset(
         dataset_id=dataset_id,
@@ -223,11 +258,90 @@ def load_point_in_time_dataset(
             "raw_payload_count": len(raw_payload_ids),
             "provider_code": provider_codes[0],
             "retrieval_from": retrieval_from.isoformat(),
-            "retrieval_to": retrieval_to.isoformat(),
+            "retrieval_to": as_of.isoformat(),
             "observed_from": observed_from.isoformat(),
-            "observed_to": observed_to.isoformat(),
+            "observed_to": as_of.isoformat(),
             "content_digest": content_digest,
             "dataset_digest": dataset.digest,
         }
+    )
+    return dataset, meta
+
+
+def load_point_in_time_dataset(
+    session: Session,
+    *,
+    fixture: Match,
+    as_of: datetime,
+) -> tuple[IntelligenceDataset | None, dict[str, Any]]:
+    """Load results observed strictly before ``as_of`` and the target kickoff.
+
+    A result row is eligible only when the current score was first recorded before
+    ``as_of`` (``MatchResult.resolved_at``). ``Match.last_synced_at`` is not used: it
+    changes on every refresh even when the score did not, which would make identical
+    analyses non-reproducible.
+    """
+
+    as_of = _aware(as_of)
+    target_kickoff = _aware(fixture.kickoff_utc)
+    if as_of >= target_kickoff:
+        raise ValueError("analysis as_of must be before the target kickoff")
+
+    rows = session.execute(
+        _result_query(
+            Match.kickoff_utc < target_kickoff,
+            MatchResult.resolved_at < as_of,
+        )
+    ).all()
+
+    excluded = _count_excluded(
+        session,
+        Match.kickoff_utc < target_kickoff,
+        MatchResult.resolved_at < as_of,
+    )
+
+    dataset, meta = _build_dataset(
+        session,
+        rows=rows,
+        as_of=as_of,
+        dataset_prefix=f"ds_match_{fixture.id}",
+        excluded_extra_time=excluded,
+    )
+    meta["competition_matches"] = sum(
+        1
+        for match in (dataset.matches if dataset else ())
+        if match.competition_id == str(fixture.competition_id)
+    )
+    return dataset, meta
+
+
+def load_corpus_dataset(
+    session: Session,
+    *,
+    as_of: datetime,
+    dataset_prefix: str = "ds_corpus",
+) -> tuple[IntelligenceDataset | None, dict[str, Any]]:
+    """Load the whole stored regulation-result corpus as of ``as_of``.
+
+    Used by the model evaluation run. The same provenance checks apply: without
+    archived payloads the dataset is refused rather than certified.
+    """
+
+    as_of = _aware(as_of)
+    rows = session.execute(
+        _result_query(MatchResult.resolved_at < as_of)
+    ).all()
+    excluded = _count_excluded(session, MatchResult.resolved_at < as_of)
+
+    dataset, meta = _build_dataset(
+        session,
+        rows=rows,
+        as_of=as_of,
+        dataset_prefix=dataset_prefix,
+        excluded_extra_time=excluded,
+    )
+    meta["competition_matches"] = meta["historical_matches"]
+    meta["competitions"] = (
+        len({match.competition_id for match in dataset.matches}) if dataset else 0
     )
     return dataset, meta

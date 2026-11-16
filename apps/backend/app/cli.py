@@ -91,6 +91,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     subparsers.add_parser("migrate", help="Apply database migrations to head.")
+
+    evaluate = subparsers.add_parser(
+        "evaluate",
+        help="Run and persist the multi-competition model evaluation.",
+    )
+    evaluate.add_argument(
+        "--as-of",
+        default=None,
+        help="ISO-8601 corpus checkpoint (default: now).",
+    )
+    evaluate.add_argument(
+        "--summary-only",
+        action="store_true",
+        help="Print model metrics without per-competition and timeline blocks.",
+    )
     return parser
 
 
@@ -411,6 +426,66 @@ def _purge_retention(settings: Settings, dry_run: bool) -> tuple[dict[str, Any],
     }, 0
 
 
+def _evaluate(settings: Settings, as_of: str | None, summary_only: bool) -> tuple[Any, int]:
+    from app.repositories.evaluation import evaluate_corpus
+
+    checkpoint = _parse_checkpoint(as_of)
+    with session_scope() as session:
+        record = evaluate_corpus(session, checkpoint=checkpoint)
+        report = record.report
+
+    payload: dict[str, Any] = {
+        "evaluation_id": record.id,
+        "protocol_version": record.protocol_version,
+        "evaluation_version": record.evaluation_version,
+        "dataset_id": record.dataset_id,
+        "dataset_digest": record.dataset_digest,
+        "sample_size": record.sample_size,
+        "window_from": _iso(record.window_from),
+        "window_to": _iso(record.window_to),
+        "generated_at": _iso(record.generated_at),
+        "models": [
+            {
+                "key": model.get("key"),
+                "model_id": model.get("model_id"),
+                "model_version": model.get("model_version"),
+                "sample_size": model.get("sample_size"),
+                "brier_score": model.get("brier_score"),
+                "log_loss": model.get("log_loss"),
+                "brier_skill_score_vs_uniform": model.get("brier_skill_score_vs_uniform"),
+                "expected_calibration_error": model.get("expected_calibration_error"),
+            }
+            for model in report.get("models", [])
+        ],
+        "insufficient_competitions": [
+            item.get("competition_id")
+            for item in report.get("insufficient_competitions", [])
+        ],
+    }
+    if not summary_only:
+        payload["comparisons"] = report.get("comparisons", [])
+        payload["competitions"] = [
+            {
+                "competition_id": item.get("competition_id"),
+                "sample_size": item.get("sample_size"),
+                "status": item.get("status"),
+            }
+            for item in report.get("competitions", [])
+        ]
+    return payload, 0
+
+
+def _parse_checkpoint(value: str | None) -> datetime:
+    from datetime import timezone
+
+    if not value:
+        return utc_now()
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
 def _migrate(settings: Settings) -> tuple[dict[str, Any], int]:
     from pathlib import Path
 
@@ -482,6 +557,8 @@ def main(argv: list[str] | None = None) -> int:
             payload, code = _sync(settings, args.job, parameters=params or None)
         elif args.command == "migrate":
             payload, code = _migrate(settings)
+        elif args.command == "evaluate":
+            payload, code = _evaluate(settings, args.as_of, args.summary_only)
         else:  # pragma: no cover - argparse enforces the choices
             payload, code = {"error": "unknown command"}, 2
     except AppError as exc:

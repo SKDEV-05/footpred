@@ -41,6 +41,7 @@ EXPECTED_TABLES = {
     "quarantined_records",
     "match_change_log",
     "match_analyses",
+    "model_evaluations",  # Phase 6: evaluation run persistence
 }
 
 
