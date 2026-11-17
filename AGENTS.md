@@ -26,20 +26,27 @@ The platform must never promise guaranteed outcomes or a fixed accuracy figure.
 
 ## 3. Current phase
 
-**Phase 4 — Offline synthetic-test-only intelligence foundation. Status: accepted by the
-developer.** Phase 3 independent QA review is complete with a FAIL acceptance verdict; security
-reassessment permits private loopback-only use with conditions and rejects public exposure.
-Phase 5 is **not approved**; its entry gates remain closed. No live provider call has been
-made and no coverage is verified.
-Phase 4 adds pure descriptive intelligence, point-in-time features, mathematical probability
-primitives, and evaluation mechanics. It has no database/API/provider integration and makes no
-real prediction or performance claim.
+**Phase 7 — model selection, comparison and multi-competition evaluation. Status:
+implemented privately and self-reviewed; not independently accepted.** Phase 4 (offline,
+synthetic-test-only foundation) was accepted by the developer on 2026-11-14. Phase 5 (private
+real-data analysis under ADR-0010) is implemented on loopback. Phase 6 was the provider
+capability audit. Phase 3 independent QA remains FAIL and security permits private
+loopback-only use with conditions, rejecting public exposure.
+
+Phase 7 added explicit model selection (`poisson`, `dixon_coles`, `elo`), a comparison endpoint
+on one point-in-time dataset, a persisted 970-match chronological evaluation, tests, an
+evaluation dashboard, and corrected documentation. `poisson-v1.1.0` remains the permanent
+baseline. No model is substituted silently, and no general accuracy claim is made.
+
+**Phase 8 (betting analytics: odds, expected value, paper betting, best bets) is NOT
+approved and not implemented.** See `docs/research/phase-8-betting-proposals-rejected.md`.
 
 See `PROJECT_STATUS.md` and `memory/current-state.md`.
 
 ## 4. Phase boundaries (hard)
 
-Until the developer explicitly approves Phase 5, agents must not:
+Until the developer explicitly approves a new phase (Phase 8 or any scope expansion), agents
+must not extend the following beyond what Phase 5/7 already implement:
 
 - fit, train, calibrate, or validate a prediction model on real football data;
 - make or publish a real-world match prediction or performance claim;
@@ -57,7 +64,8 @@ Until the developer explicitly approves Phase 5, agents must not:
 
 Approved Phase 4 work is limited by
 `docs/decisions/ADR-0009-pure-offline-intelligence-boundary.md`: offline, deterministic,
-synthetic-test-only calculations with no I/O. Phase 5 remains unapproved.
+synthetic-test-only calculations with no I/O. Phase 4 remains frozen in that form; later
+phases do not retroactively widen it. Phase 8 has no approval and no ADR.
 
 If a task appears to require any of these, stop and request approval. Do not "helpfully"
 cross the boundary because the next step seems obvious.

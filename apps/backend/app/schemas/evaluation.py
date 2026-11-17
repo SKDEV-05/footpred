@@ -23,6 +23,7 @@ __all__ = [
     "EvaluationSettingsOut",
     "EvaluationWindowOut",
     "ModelMetricsOut",
+    "NestedModelMetricsOut",
     "OutcomeMetricsOut",
     "PairedComparisonOut",
     "PerMatchDifferenceOut",
@@ -71,6 +72,21 @@ class ModelMetricsOut(BaseModel):
     bootstrap: BootstrapOut | None = None
 
 
+class NestedModelMetricsOut(ModelMetricsOut):
+    """A metric block grouped under a competition or season.
+
+    The grouping already keys the block by model, so identity is optional here. The
+    top-level ``models`` list stays strict: it is the authoritative place where each
+    model's id and version must appear.
+    """
+
+    key: str | None = None
+    model_id: str | None = None
+    model_version: str | None = None
+    label: str | None = None
+    role: str | None = None
+
+
 class PerMatchDifferenceOut(BaseModel):
     mean: float | None = None
     lower: float | None = None
@@ -110,14 +126,14 @@ class CompetitionEvaluationOut(BaseModel):
     status: str
     diagnostics: CompetitionDiagnosticsOut = Field(default_factory=CompetitionDiagnosticsOut)
     fitted_parameters: FittedParametersOut | None = None
-    models: dict[str, ModelMetricsOut] = Field(default_factory=dict)
+    models: dict[str, NestedModelMetricsOut] = Field(default_factory=dict)
 
 
 class SeasonEvaluationOut(BaseModel):
     competition_id: str
     season_id: str
     sample_size: int
-    models: dict[str, ModelMetricsOut] = Field(default_factory=dict)
+    models: dict[str, NestedModelMetricsOut] = Field(default_factory=dict)
 
 
 class TimelinePointOut(BaseModel):

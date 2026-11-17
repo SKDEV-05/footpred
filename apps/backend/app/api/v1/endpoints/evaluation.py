@@ -160,5 +160,5 @@ def get_evaluation(
 
     record = session.get(ModelEvaluation, run_id)
     if record is None:
-        raise NotFoundError("evaluation", run_id)
+        raise NotFoundError(f"Evaluation run {run_id} does not exist.")
     return _map_run(record)

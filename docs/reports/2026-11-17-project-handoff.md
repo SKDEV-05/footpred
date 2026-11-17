@@ -498,6 +498,14 @@ the documentation rule that unimplemented features must not be described as comp
 | `docs/research/phase-3-*`, `phase-4-*`, `phase-5-*`, `phase-6-*` | MEDIUM–HIGH | Historical; read with their stated scope |
 | `docs/architecture/`, `docs/data/`, `docs/football/` | MEDIUM | Design intent, not a live status report |
 
+**Resolution (2026-11-17).** This table records the state at handoff and is retained as
+history. In the Phase 7 close-out the six `docs/research/phase-8-*.md` files were deleted and
+replaced by `docs/research/phase-8-betting-proposals-rejected.md`; their content survives in
+git history at `4aed17d`. `PROJECT_STATUS.md`, `memory/current-state.md`,
+`memory/next-steps.md`, `memory/known-limitations.md` and
+`docs/research/phase-7-actual-project-status.md` were rewritten from verified state. See
+`docs/research/phase-7-final-report.md`.
+
 ---
 
 ## 14. Known limitations (real)

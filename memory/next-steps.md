@@ -1,136 +1,82 @@
-## Stage 0 — Repository audit and baseline reproduction ✅ COMPLETE
+# Next Steps
 
-## Stage 1 — Independent ML/QA review ✅ COMPLETE
+**Last updated:** 2026-11-17
+**Current phase:** Phase 7 complete as self-reviewed work. Phase 8 is **not approved**.
+Anything below marked BLOCKED needs a developer decision; do not start it by inference.
 
-- Poisson model: mathematically correct, probability conserving
-- Dixon-Coles: implemented but not in production path
-- Elo: implemented but not in production path
-- Backtesting: chronological, proper abstention, all validations
-- Draw probability under-prediction documented (LIM-028)
-- Calibration: ECE/MCE computed but not studied
+## Phase 7 close-out — done
 
-**Deliverable**: `docs/research/phase-8-independent-ml-review.md`
+| Item | State |
+| --- | --- |
+| Model dispatch (`model_selection.py`) with no fallback | Done |
+| `?model=` on the analysis endpoint | Done |
+| Comparison endpoint on one point-in-time dataset | Done |
+| DC leakage guard, `rho` bounds/clipping | Done |
+| Elo chronological replay + frozen Davidson mapping | Done |
+| Multi-competition evaluation reproduced and persisted | Done |
+| 56 new tests (321 total passing) | Done |
+| `/evaluation` dashboard from persisted runs | Done |
+| Match panel model selector and comparison table | Done |
+| Responsive checks at 375–1440 px | Done |
+| False Phase 8 docs replaced by a frozen proposal record | Done |
+| Orphan `validation.py` / `calibration.py` deleted | Done |
 
-## Stage 2 — Strict chronological validation ✅ COMPLETE
+## Immediate open gates (in order)
 
-- Built `apps/backend/app/intelligence/validation.py`
-- Implements protocols A-G (rolling origin, expanding window, multiple windows, multiple competitions/seasons, sample requirements, train/test separation)
-- All models evaluated on identical fixtures
-- Fixed seed bootstrap CIs
-- Versioned protocol, evaluation, model versions
-- No future-data leakage
+1. **Independent QA/ML review** — BLOCKED on a reviewer who is not the implementing agent.
+   Scope: `poisson-v1.1.0`, `dixon-coles-v1.0.0`, `elo-v1.0.0`, the `phase7-v1` protocol, and
+   the claims in `phase-7-final-report.md`. Self-review does not satisfy `AGENTS.md` §7.
+2. **Public-display licence (LIM-006, LIM-020)** — BLOCKED on legal/licence review. Until it is
+   resolved, the product stays loopback-only and no result, probability or crest may be shown
+   to a third party.
+3. **Phase 3 acceptance** — prior independent QA verdict FAIL; security accepts private
+   loopback only and rejects public exposure. A fresh exact-tree re-audit is required.
+4. **Coverage decision (PD-002/PD-003)** — confirm which competitions and seasons are licensed
+   and actually retrieved. Eleven competitions have matches; EC and WC have none.
 
-**Deliverable**: `docs/research/phase-8-out-of-sample-validation.md`
+## Model and evaluation work that is justified now
 
-## Stage 3 — Probability calibration ⚠️ IN PROGRESS
+These are research tasks, not approved features. Each needs a plan before code.
 
-**Task**: Build dedicated calibration subsystem with reliability diagrams, per-competition calibration, and investigation of draw bias.
+1. **Reconcile evaluation cadence with live behaviour (MR-11).** The evaluation freezes DC
+   `rho` and Elo's Davidson mapping at the competition's first target kickoff; the live path
+   refits per request. Either evaluate the live cadence or make the live path freeze. Decide
+   with evidence, not preference.
+2. **Clustered bootstrap (MR-03).** Resample by competition/season/matchday rather than by
+   match, or report a block bootstrap. Current intervals are optimistic.
+3. **Out-of-time holdout (MR-04).** The 970 matches informed protocol choices. A genuine
+   holdout requires future matches, not a re-split of the same corpus.
+4. **Joint Dixon-Coles MLE.** Replace the two-stage approximation with a joint fit and compare
+   it against the current DC before drawing any conclusion about low-score dependence.
+5. **Provider second source.** No independent cross-check of stored scores exists. A second
+   provider would test provider-side correctness; it also needs a licence review.
+6. **Per-competition sample adequacy.** 59–100 evaluation matches per competition cannot rank
+   leagues. More seasons or explicit per-competition abstention are the only honest options.
 
-**Required**:
-- Reliability diagrams with proper visualization
-- ECE/MCE by competition, season, probability range
-- Draw probability bias analysis
-- Calibration correction options (temperature scaling, isotonic regression)
-- Calibration data/train split
+## Explicitly not approved
 
-**Deliverable**: `docs/research/phase-8-calibration-study.md`
+Do not start any of these without a developer decision and an ADR:
 
-## Stage 4 — Market odds and Expected Value engine ⚠️ PENDING
+- odds ingestion, market-implied probability, expected value, value betting;
+- paper betting, staking, bankroll, ROI or drawdown simulation;
+- best-bets ranking or tip presentation;
+- probability calibration as a **correction** (temperature scaling, isotonic) applied to
+  published probabilities;
+- authentication, subscriptions, payments, advertising;
+- public deployment, containers, CI/CD, monitoring stack, PostgreSQL;
+- machine-learning training, an LLM prediction path, generated analysis text;
+- in-match statistics, lineups, injuries or paid-tier xG ingestion.
 
-**Task**: Implement odds storage, EV calculation, and market analysis subsystem.
+The Phase 8 proposals are frozen in `docs/research/phase-8-betting-proposals-rejected.md`.
+Reading them is not approval to implement them.
 
-**Required**:
-- Database schema for odds
-- Manual odds input support (clearly marked as manual)
-- Expected Value calculation: `EV = model_probability × decimal_odds - 1`
-- Bookmaker tracking
-- Fair probability normalization
-- Odds freshness detection
+## Routine verification before any claim
 
-**Deliverable**: `docs/research/phase-8-odds-value-engine.md`
+```
+cd apps/backend && PYTHONPATH=. ../../.venv/bin/python -m pytest
+.venv/bin/python -m alembic current      # expect 0006 (head)
+.venv/bin/python -m alembic check        # expect no new upgrade operations
+cd apps/web && npx tsc --noEmit && npm run build
+```
 
-## Stage 5 — Paper Betting ⚠️ PENDING
-
-**Task**: Build complete virtual betting simulation.
-
-**Required**:
-- Prediction recording before kickoff
-- Immutable storage with model version and dataset digest
-- Virtual stake management
-- Match resolution after fixture completion
-- Performance metrics: win rate, ROI, yield, drawdown, streaks
-- Strategy comparison
-
-**Deliverable**: `docs/research/phase-8-paper-betting.md`
-
-## Stage 6 — Best Bets / Value Opportunities ⚠️ PENDING
-
-**Task**: Create dedicated value opportunities ranking interface.
-
-**Required**:
-- Filter by competition, market, date, minimum EV
-- Sort by model probability, EV, kickoff
-- Quality and uncertainty indicators
-- Proper eligibility statuses (VALUE_CANDIDATE, INSUFFICIENT_DATA, ODDS_UNAVAILABLE, etc.)
-- No fake opportunities created
-
-**Deliverable**: `docs/research/phase-8-best-bets.md`
-
-## Stage 7 — Commercial licensing assessment ⚠️ PENDING
-
-**Task**: Investigate provider terms and create licensing matrix.
-
-**Required**:
-- football-data.org clause 9.1 (display after cancellation)
-- API-Football terms review
-- Statistics tier limitations
-- Redistribution rights assessment
-- Caching restrictions
-
-**Deliverable**: `docs/research/phase-8-commercial-licensing-review.md`
-
-## Stage 8 — Authentication and security ⚠️ PENDING
-
-**Task**: Audit and implement security for controlled public exposure.
-
-**Required**:
-- User registration/login/logout
-- Password hashing and session management
-- Role-based authorization
-- Rate limiting
-- Security headers
-- CSRF protection
-- Audit logging
-- TLS/HTTPS design
-
-**Deliverable**: `docs/research/phase-8-security-review.md`
-
-## Stage 9 — Complete Next.js UI/UX redesign ⚠️ PENDING
-
-**Task**: Substantial professional redesign of the frontend.
-
-**Required**:
-- Premium sports analytics dashboard
-- Modern professional dark interface
-- Strong typography and spacing
-- Clean data visualization
-- Excellent desktop and mobile experiences
-- Overview, Matches, Analyze Match, Best Bets, Model Evaluation, Paper Betting, Performance, Settings
-
-**Deliverable**: `docs/research/phase-8-frontend-redesign.md`
-
-## Stage 10 — Integration, performance, QA and documentation ⚠️ PENDING
-
-**Task**: Full integration testing and final documentation.
-
-**Required**:
-- Full backend test suite execution
-- Alembic check
-- TypeScript checks
-- Production frontend build
-- API smoke tests
-- Browser QA (desktop + mobile)
-- Responsive QA at multiple viewports
-- Final report
-
-**Deliverable**: `docs/research/phase-8-final-report.md`
+Then reproduce the evaluation and confirm the persisted row is reused rather than duplicated.

@@ -1,302 +1,209 @@
-# PROJECT STATUS RECONCILIATION — PHASE 7
+# Project Status Reconciliation — Phase 7
 
-**Date:** 2026-11-16
-
-**Objective:** Understand the exact current state of the football intelligence platform and identify what is completed, partially completed, missing, broken, or unverified.
-
-**Scope:** This audit verifies the actual implementation, not the documented state. No new features are implemented, no models are created, no database schemas are modified, and no data is altered or deleted.
-
-## Summary of Findings
-
-The platform is **functionally complete for the defined scope**: offline, synthetic-test-only intelligence foundation with Phase 5 analysis capabilities implemented privately on loopback. All tests pass except two migration tests that expect Phase 6 models (`model_evaluations`). The evaluation engine and API work end-to-end, but the current implementation includes Phase 6 and Phase 7 model evaluation features that were not in the documented Phase 5 scope.
-
----
-
-## A. Completed
-
-### Backend Core
-- **Database**: SQLite with WAL, foreign keys, busy timeout, fail-closed non-SQLite enforcement
-- **Schema**: Complete with all models defined in `app/models/`; migrations `0001`–`0006` applied
-- **Migration system**: Alembic working; `alembic check` passes; migrations include `model_evaluations` (Phase 6)
-- **Ingestion pipeline**: Raw archive, identity resolution, normalization, validation, provider adapters
-- **Phase 3 read-only API**: Complete with `/api/v1/` endpoints for fixtures, teams, competitions, sync
-- **Phase 5 analysis**: `POST /api/v1/analysis/matches/{id}` works end-to-end with Poisson model
-- **Evaluation persistence**: `model_evaluations` table stores `match_analyses` and evaluation reports
-
-### Intelligence Engine
-- **Poisson model**: `poisson-v1.1.0` with supplied rates (Phase 4)
-- **Dixon-Coles model**: Baseline Phase 4 implementation plus Phase 7 `dixon-coles-v1.0.0` with fitted `rho` estimation
-- **Elo baseline**: `elo-v1.0.0` with Davidson fit estimation (Phase 7)
-- **Evaluation engine**: `run_multi_competition_backtest` implements Phase 7 protocol `phase7-v1`
-- **Backtesting**: Rolling-origin, multi-competition, multi-model evaluation with bootstrapped CIs
-
-### Analysis & API
-- **Analysis API**: `/api/v1/analysis/matches/{id}` produces Poisson-based reports
-- **Evaluation API**: `/api/evaluation/run`, `/api/evaluation/latest`, `/api/evaluation/runs`
-- **Backend CLI**: `coverage`, `migrate`, `status`, `check-provider`, `sync`, `sweep-runs`
-- **Frontend**: Next.js app with fixture explorer and Match Analysis panel
-
-### Real Historical Data
-- **Storage**: `data/football.db` contains 5,322 matches, 4,905 results, 417 fixtures across 13 competitions
-- **Scope**: PD (La Liga) is the evaluated corpus with 380 finished results in 2025/2026
-- **Provenance**: Every match links to an archived raw payload from football-data.org
-- **Analysis window**: PD matches 2025-02-05 → 2026-11-14 for evaluation
-
-### Verification
-- **Tests**: 265 tests passing (2 failures in migration tests due to missing Phase 6 expectations)
-- **Live analysis**: Match 410 (Real Madrid vs Celta) returns `READY` with Poisson-based probabilities
-- **Backtest**: 50 out-of-sample PD matches evaluated with Brier 0.5722, skill 0.1417
-- **Persistence**: Evaluation runs stored in `model_evaluations` table
+**Date:** 2026-11-17
+**Supersedes:** the 2026-11-16 version of this file, which contained several false claims
+(see §6).
+**Objective:** Record the verified state of the platform after the Phase 7 model-selection,
+comparison, evaluation and documentation work.
+**Scope:** Verification and correction. No model was re-fitted to change a result, no schema
+was changed, and no stored data was edited or deleted.
+**Method:** every figure below was read from the working tree, the live SQLite store, the
+running API, an executed test suite, or Alembic. Nothing is copied from an earlier status
+document without re-checking it.
 
 ---
 
-## B. Partially Completed
+## 1. Summary
 
-### Phase 3 (Documentation vs. Implementation)
-- **Phase 3.1 remediation**: Some issues addressed but conditions remain open
-- **Provider evaluation**: Live verification performed but statistics/H2H UNVERIFIED
-- **Security conditions**: Public exposure rejected but private loopback accepted
+The platform is a **private, loopback-only, real-data football analysis prototype** with:
 
-### Phase 4/5 (Documentation vs. Implementation)
-- **Documentation scope**: PROJECT_STATUS.md states Phase 5 analysis only, but implementation includes Phase 6 & 7
-- **Model coverage**: Phase 6 (`model_evaluations`) and Phase 7 (`dixon_coles-v1.0.0`, `elo-v1.0.0`, `phase7-v1`) features exist but are undocumented
-- **Frontend scope**: Project documented as Phase 5 only, but includes evaluation dashboard features
+- a provenance-complete historical corpus (one provider, one backfill);
+- three statistical models (Poisson baseline, Dixon-Coles, Elo + Davidson) plus two
+  trivial baselines;
+- a chronological, identical-match-set evaluation that is persisted, idempotent and
+  reproducible on the current corpus;
+- a model selector and a model-comparison endpoint on the analysis API;
+- next/image-free Next.js UI with fixture explorer, match analysis panel and an
+  `/evaluation` dashboard that reads only persisted runs.
 
-### Integration
-- **Phase 6 model persistence**: `model_evaluations` table works but tests fail due to expected tables mismatch
-- **Phase 7 evaluation**: Protocol `phase7-v1` implemented but not documented as scope
-- **Provider statistics**: Not verified (free tier has no statistics)
+It is **not** production-ready, **not** publicly deployable, and makes **no accuracy claim**.
+Phase 8 (betting analytics) is not approved; the documents that claimed it was implemented
+were false and have been replaced by a frozen proposal record.
 
----
+## 2. Repository state
 
-## C. Not Implemented
+| Item | Verified value |
+|---|---|
+| Git HEAD | `4aed17d` — "phase 7 audit" (parent `d3a9490`) |
+| Working tree | Phase 7 changes uncommitted (see `phase-7-final-report.md` §4) |
+| Python | 3.15 in `.venv`; pure-Python maths (no numpy/scipy/pandas/sklearn) |
+| Backend tests | **321 passed**, 0 failed, 0 skipped |
+| Alembic | `current` → `0006 (head)`; `check` → no new upgrade operations |
+| Frontend | Next.js 16 App Router, React 19, TypeScript 5, Tailwind 4 |
+| Type check | `tsc --noEmit` clean |
+| Build | `npm run build` passes, including `/evaluation` |
 
-### Deliberately Not Built (Documented)
-- **Public deployment**: No shared-network exposure
-- **Authentication**: No auth/authz/rate limits/TLS for public exposure
-- **Live statistics**: No in-match statistics, lineups, injuries (free tier limitation)
-- **Paid features**: No subscriptions, payments, or provider tiers
-- **Frontend limitations**: Mobile below 471px not verified (LIM-022)
+## 3. Data state (`data/football.db`)
 
-### Current Unverified Capabilities
-- **Provider statistics**: Neither football-data.org nor API-Football statistics endpoints verified
-- **H2H data**: No head-to-head records verified from either provider
-- **Multi-season depth**: Only 9-day window (football-data.org) or yesterday (API-Football) verified
-- **Real-time data**: No in-match statistics, events, players
-- **Redistribution licence**: LIM-006 unresolved (no public display rights)
+| Item | Value |
+|---|---:|
+| Countries | 70 |
+| Competitions | 13 (11 with stored matches) |
+| Seasons | 22 |
+| Teams | 334 |
+| Matches | 5,322 |
+| Finished results | 4,905 |
+| Regulation results usable by the models | 4,892 |
+| Extra-time / shootout results excluded | 13 |
+| Upcoming fixtures | 417 |
+| Matches linked to an archived raw payload | 5,322 / 5,322 |
+| Persisted analysis reports | 37 |
+| Persisted evaluation runs | 2 |
 
----
+Eleven competitions have stored matches: BL1, BSA, CL, CLI, DED, ELC, FL1, PD, PL, PPL, SA.
+EC and WC have competition rows but **zero stored matches**, so they do not appear in the
+evaluation at all. "13 competitions in the database" is **not** "13 competitions evaluated".
 
-## D. Broken
+Every result was backfilled in one retrieval window on 2026-11-16. `resolved_at` records when
+this platform stored the score, not when the provider published it, so every historical
+observation is a reconstruction (LIM-030). The evaluation uses a documented
+`kickoff + 3 h` eligibility horizon and labels itself retrospective.
 
-### Tests
-- **test_initial_migration_builds_every_table**: Fails because `model_evaluations` table not created by migration `0005`
-- **test_upgrade_is_idempotent**: Same failure - migration mismatch
+## 4. What exists, verified
 
-### Implementation Status
-- **Phase 6/7 documentation gap**: Code implements features not in documented scope
-- **Test expectations**: Migration tests expect Phase 6 tables from migration `0005` but they're actually in `0006`
+### 4.1 Intelligence
 
----
+| Component | Version | State |
+|---|---|---|
+| Independent Poisson | `poisson-v1.1.0` | Live analysis path; shared rate estimator |
+| Dixon-Coles | `dixon-coles-v1.0.0` | Two-stage fit (rates, then `rho`); evaluated; not the default |
+| Elo + Davidson | `elo-v1.0.0` | Chronological replay and frozen 1X2 mapping; evaluation and on-demand |
+| Uniform baseline | `uniform-v1.0.0` | Comparison baseline |
+| Competition frequency baseline | `frequency-v1.0.0` | Comparison baseline |
+| Evaluation engine | protocol `phase7-v1`, `evaluation-v1.2.0` | Chronological, identical match set, persisted |
+| Model dispatch | `app/intelligence/model_selection.py` | Only key→implementation map; no fallback |
 
-## E. Unverified
+### 4.2 API
 
-### Business Capabilities
-- **Coverage guarantee**: No proven coverage of any competition or season beyond documented
-- **Provider selection**: football-data.org adapter exists, API-Football verified but statistics UNVERIFIED
-- **Public deployment ready**: License unresolved (LIM-006)
-- **Mobile below 486px**: Not verified (browser tooling lacks viewport emulation)
-- **Independent QA/ML review**: Open requirement for `poisson-v1.1.0` review
+All under the `/api/v1` prefix (this is `/api/v1/...`, **not** `/api/...`):
 
-### Provider Capabilities
-- **Statistics**: Not called on either provider during Phase 6 audit
-- **H2H**: Not called on either provider during Phase  doubling 06 audit
-- **Season depth**: Only recent window probed, not multi-season
-- **Lineups/players**: Not called during audit
+| Method | Path | Writes? |
+|---|---|---|
+| POST | `/analysis/matches/{match_id}?model=&force=` | Yes — persists a report |
+| POST | `/analysis/matches/{match_id}/comparison` | Yes — persists one report per model |
+| GET | `/analysis/{analysis_id}` | No |
+| GET | `/analysis/matches/{match_id}/history` | No |
+| POST | `/evaluation/run` | Yes — persists an evaluation run |
+| GET | `/evaluation/latest` | No |
+| GET | `/evaluation/runs` | No |
+| GET | `/evaluation/{run_id}` | No |
 
----
+An unknown `model` value returns HTTP 422 with `code = "unknown_model"`; nothing is
+persisted. An unknown match returns 404. There is no silent fallback to Poisson.
 
-## F. Model Evaluation (Measured Results)
+### 4.3 Frontend
 
-### Actual Evaluation Run (CLI: `python -m app.cli evaluate --summary-only`, 2026-11-16)
-- **Evaluation ID**: 1
-- **Protocol**: `phase7-v1`
-- **Evaluation version**: `evaluation-v1.2.0`
-- **Dataset**: `ds_corpus_a9dff46f14c9b473` (digest: `bde93c2d1684d7133cb40c4fd928075b447b1006e13c0d229bb0142b0a1ad42c`)
-- **Sample size**: **970 matches** (not 50)
-- **Window**: 2026-02-25 → 2026-11-14 (9 months across all 13 competitions)
-- **Generated**: 2026-11-16T19:49:29.766189Z
+| Route | State |
+|---|---|
+| `/` | Stored fixtures, crests, emblems, windows, search, filters, pagination |
+| `/matches/[id]` | Fixture detail, honest "not supplied" markers, analysis panel |
+| `/matches/[id]` analysis panel | Model selector, "Analyze with …", comparison table, model-aware copy, generic parameters, provenance, limitations, history |
+| `/evaluation` | Persisted-run dashboard: provenance, overview, paired differences, per-outcome calibration, per-competition, per-season, timeline, run list |
 
-### Model Metrics (all scored on identical 970 matches)
+`/evaluation` never computes a metric in the browser; it renders `GET /api/v1/evaluation/...`.
+Responsive behaviour was executed at 375, 390, 430, 768, 1024, 1280 and 1440 px: no
+page-level overflow, wide tables scroll inside their own container.
 
-| Model | Key | Version | Brier | Log Loss | Brier Skill vs Uniform | ECE |
-|-------|-----|---------|-------|----------|------------------------|-----|
-| Poisson | `poisson` | `poisson-v1.1.0` | **0.5831** | 0.9828 | **0.1253** | 0.0254 |
-| Dixon-Coles | `dixon_coles` | `dixon-coles-v1.0.0` | 0.5829 | 0.9821 | 0.1256 | 0.0258 |
-| Elo (Davidson) | `elo` | `elo-v1.0.0` | 0.5911 | 0.9916 | 0.1133 | 0.0375 |
-| Uniform (baseline) | `uniform` | `uniform-v1.0.0` | 0.6667 | 1.0986 | 0.0000 | 0.0802 |
-| Competition frequency | `competition_frequency` | `frequency-v1.0.0` | 0.6405 | 1.0592 | 0.0393 | **0.0143** |
+## 5. Measured evaluation
 
-### Key Observations
-- **All models beat uniform baseline** on Brier skill (positive = better than 1/3 guessing)
-- **Dixon-Coles slightly edges Poisson** (0.1256 vs 0.1253 Brier skill, 0.5829 vs 0.5831 Brier)
-- **Elo lags** other models on both Brier (0.5911) and log loss (0.9916)
-- **Competition frequency** has best calibration (ECE 0.0143) but worst discrimination (Brier 0.6405)
-- **Sample size**: 970 is meaningful; covers all 13 competitions with stored finished results
+Persisted run 2, digest `48bc547bf6a88850…`, protocol `phase7-v1`, sample **970 matches**,
+11 competitions, 2026-02-25T20:00Z → 2026-11-14T23:30Z.
 
-### Per-Competition Evaluation
-- **Competitions evaluated**: All 13 with sufficient history (BL1, BSA, CL, CLI, DED, ELC, FL1, PD, PL, PPL, SA, EC, WC)
-- **EC/WC**: `no_stored_matches` in corpus, marked `INSUFFICIENT_DATA` 
-- **Phase 7 protocol**: Models fitted per competition before first test match, frozen for window
+| Model | Brier | Log loss | Skill vs uniform | ECE | Top-pick |
+|---|---:|---:|---:|---:|---:|
+| Poisson | 0.5831 | 0.9828 | 0.1253 | 0.0254 | 51.55% |
+| Dixon-Coles | 0.5829 | 0.9821 | 0.1256 | 0.0258 | 51.34% |
+| Elo (Davidson) | 0.5911 | 0.9916 | 0.1133 | 0.0375 | 51.55% |
+| Competition frequency | 0.6405 | 1.0592 | 0.0393 | 0.0143 | 45.36% |
+| Uniform 1/3 | 0.6667 | 1.0986 | 0.0000 | 0.0802 | 45.36% |
 
-### Phase 5 Single-Competition Backtest (from docs)
-- **Model**: `poisson-v1.1.0` only
-- **Competition**: PD only
-- **Sample**: 50 out-of-sample matches (2026-10-09 → 2026-11-08)
-- **Brier**: 0.5722, **Log loss**: 0.9581, **Skill**: 0.1417
-- **ECE**: 0.0661, **MCE**: 0.3084
-- **Note**: Phase 5 backtest differs from Phase 7 multi-competition protocol
+Paired difference vs Poisson (positive = Poisson worse on the same matches):
 
----
+| Candidate | Brier mean | 95% CI | Reading |
+|---|---:|---|---|
+| Dixon-Coles | +0.0002 | [−0.0009, +0.0013] | indistinguishable |
+| Elo | −0.0080 | [−0.0195, +0.0040] | directionally worse, not proven |
+| Uniform | −0.0835 | [−0.1051, −0.0619] | Poisson significantly better |
+| Competition frequency | −0.0573 | [−0.0755, −0.0388] | Poisson significantly better |
 
-## G. Business Readiness
+Run 1 (digest `bde93c2d1684d713…`) has identical metrics. It differs only in identity because
+`resolved_at` for internal matches 1 and 2 was re-set after run 1 was written, which changed
+the materialised corpus and its digest. This is digest sensitivity to input, not engine
+non-determinism; the detail is recorded in `phase-7-baseline-audit.md` §6.3.
 
-### Data Quality
-- **Storage**: Real historical results (4,905 finished) with archived payloads
-- **Provenance**: Every match linked to provider raw archive
-- **Completeness**: Missing data stays missing, never filled with zeros
-- **Quality**: Extra-time/penalty defects quarantined (10 rejections)
+## 6. Corrections to the previous version of this document
 
-### Model Quality
-- **Reproducibility**: Predictions reconstructable from stored inputs, code version, parameters
-- **Synthetic testing**: All intelligence tests pass (265/267)
-- **Evaluation evidence**: Backtest results measured but only on one corpus (PD)
-- **Calibration**: Measurable but indicates room for improvement (ECE 0.0661)
+| Previous claim | Verified reality |
+|---|---|
+| "970 matches across all 13 competitions" | 11 competitions contribute matches. EC and WC have no stored matches. |
+| "EC/WC marked `INSUFFICIENT_DATA`" | No competition is marked insufficient in the persisted run; `insufficient_competitions` is empty. |
+| "265 passed, 2 failed (migration expectations)" | 321 passed, 0 failed. The migration tests were green before Phase 7 too. |
+| "Evaluation API `/api/evaluation/...`" | Prefix is `/api/v1/evaluation`. |
+| "Frontend includes evaluation dashboard" | No `/evaluation` route existed before this phase; it was built in Phase 7. |
+| "Poisson with supplied rates (Phase 4)" | The live Poisson path fits competition rates from prior results; it is not supplied-parameter. |
+| "Dixon-Coles slightly edges Poisson" | The paired interval spans zero. DC is indistinguishable, not better. |
+| "Implementation exceeds documented scope with Phase 6/7 features" | The features are Phase 7 and are now documented. Phase 6 was the provider capability audit. |
+| "Mobile below 471 px not verified" | Executed at 375/390/430 px in this phase. |
+| "265/267 synthetic tests" | 321 tests, all passing, with synthetic fixtures plus real-corpus evaluation tests. |
 
-### Commercial Data Licensing
-- **football-data.org**: Free tier verified, statistics UNVERIFIED, public display licence UNVERIFIED
-- **API-Football**: Free tier verified (100 requests/day), per-date only, statistics UNVERIFIED
-- **No paid plans**: None purchased, no entitlements obtained
-- **Statistics tier**: No statistics available on free tiers, blocked until verified
+The failure mode was consistent: status text drifted ahead of, or behind, the code. The rule
+that follows is applied from here on — a status claim must name the file/test that proves it.
 
-### Security
-- **Phase 3 security**: ACCEPTED WITH CONDITIONS (private loopback only)
-- **Public exposure**: REJECTED (LIM-006 unresolved)
-- **Loopback only**: All real data and analysis runs on localhost only
-- **No auth**: No authentication, authorization, rate limiting implemented
+## 7. Not implemented, deliberately
 
-### Authentication / Rate Limiting / TLS
-- **Not implemented**: No auth system, no rate limits, no TLS for public exposure
-- **Scope**: Explicitly documented as deliberately not built
-- **Private loopback**: Accepted as current operational mode
+- Public deployment, containers, CI/CD, public hosting.
+- Authentication, authorisation, rate limiting, TLS.
+- Odds ingestion, expected value, paper betting, best bets (Phase 8, not approved).
+- Subscriptions, payments, advertising, affiliate links.
+- Machine-learning training, an LLM numerical engine, generated analysis text.
+- In-match statistics, lineups, injuries, provider xG (free tier has none).
+- Monitoring/alerting, backup automation, PostgreSQL support.
+- Any coverage guarantee, accuracy promise or fixed-accuracy figure.
 
-### Operational Readiness
-- **Database**: SQLite only, migrations working, schema locked (Phase 5 scope)
-- **Frontend**: TypeScript build passes, Next.js app functions locally
-- **Monitoring**: No CI/CD, monitoring stack, or operational tooling
-- **Deployment**: Deliberately not built (Docker, CI/CD, PostgreSQL)
-- **API documentation**: Complete but doesn't reflect actual implementation (Phase 6/7 features)
+## 8. Unresolved and unverified
 
----
+| Item | State |
+|---|---|
+| Independent external QA/ML review | **Open** — this phase's review is self-produced |
+| Public-display / redistribution licence (LIM-006, LIM-020) | **Open** — public exposure rejected |
+| Provider statistics / H2H | **Unavailable on free tier**; not purchased |
+| True publication timestamps | **Unavailable**; 3 h horizon is a retrospective proxy |
+| Untouched final holdout | **None**; the 970 matches informed protocol choices |
+| Clustered uncertainty | Bootstrap treats clustered matches as independent; CIs likely narrow |
+| Frozen evaluation parameters vs live refit | Differ (MR-11); documented, not reconciled |
+| Second results source | **None**; provider-side correctness unverified |
 
-## H. Next Development Roadmap
+## 9. Conclusion
 
-### Priority 1: Scope Alignment (Must)
-1. **Resolve scope documentation**: Update PROJECT_STATUS.md, CLAUDE.md to reflect actual implementation
-   - **Priority**: Critical
-   - **Files affected**: PROJECT_STATUS.md, CLAUDE.md, memory/* files
-   - **Dependencies**: Developer approval for Phase 6/7 scope
-   - **Acceptance criteria**: Documentation matches implemented features
-   - **Tests required**: Updated migration test expectations (Phase 6 tables from migration `0006`)
+Phase 7 delivered what it claimed: explicit model selection, a comparison path on one
+point-in-time dataset, a persisted and reproducible multi-competition evaluation, tests for
+all of it, an evaluation dashboard, and documentation that matches the code.
 
-### Priority 2: Data Capabilities (Blocker)
-2. **Verify provider statistics**: Bounded verification of football-data.org and API-Football statistics endpoints
-   - **Priority**: High (blocks Phase 6 statistics)
-   - **Files affected**: Phase 6 audit, provider evaluation docs
-   - **Dependencies**: football-data.org API v4, API-Football documentation
-   - **Acceptance criteria**: Statistics endpoints work and return usable data
-   - **Tests required**: Live provider tests with synthetic validation
+No evidence supports choosing a new default model. `poisson-v1.1.0` remains the baseline
+because DC shows no proven gain and Elo is directionally worse with a wider interval. That is
+a statement about this corpus and window only.
 
-3. **Verify multi-season depth**: Test historical season access on Free plans
-   - **Priority**: High (blocks historical backfill)
-   - **Files affected**: Coverage matrix, ingestion pipeline
-   - **Dependencies**: Provider authentication, API rate limits
-   - **Acceptance criteria**: Can fetch 3-5 completed seasons per competition
-   - **Tests required**: Historical backfill tests for each provider
+The correct posture remains: private, loopback-only, research prototype, no public claims,
+no betting features, with licensing and independent review as the real gates.
 
-### Priority 3: Business Blockers (Must)
-4. **Resolve public display license**: Obtain or verify redistribution rights for PD match results
-   - **Priority**: High (LIM-6) 
-   - **Files affected**: LIM-6 tracking, provider evaluation
-   - **Dependencies**: Provider terms review, legal approval
-   - **Acceptance criteria**: Valid licence for public data display
-   - **Tests required**: No tests - legal requirement
+## 10. Related documents
 
-5. **Independent QA/ML review**: External review of `poisson-v1.1.0` and fitted models
-   - **Priority**: High (mandated by developer)
-   - **Files affected**: Research documentation, evaluation reports
-   - **Dependencies**: ML reviewer availability
-   - **Acceptance criteria**: Signed off on accuracy, calibration, limitations
-   - **Tests required**: None - qualitative review
-
-### Priority 4: Infrastructure (Phase 5/6)
-6. **Implement proper Phase 5/6 boundaries**: Separate intelligence from ingestion in code structure
-   - **Priority**: Medium
-   - **Files affected**: Architecture, dependency direction, review gates
-   - **Dependencies**: AGENTS.md phase boundaries, ADR-0008 entry gates
-   - **Acceptance criteria**: Clear separation with import enforcement
-   - **Tests required**: Architecture review, boundary tests
-
-7. **Add missing infrastructure**: Monitoring, logging, backup, PostgreSQL option
-   - **Priority**: Low (deliberately not built scope)
-   - **Files affected**: Architecture decisions, deployment guides
-   - **Dependencies**: Business case for production operations
-   - **Acceptance criteria**: Production-ready operations capabilities
-   - **Tests required**: Operational testing, load testing
-
----
-
-## Verification Evidence
-
-### Tests Executed
-- **Full pytest suite**: 265 passed, 2 failed (migration table expectations)
-- **Alembic check**: No drift (migration `0006` applied)
-- **Live analysis**: Match 410 analyzed successfully via API (Real Madrid vs Celta, READY)
-- **Backtest**: 50 out-of-sample PD matches evaluated (Phase 5), 970 matches evaluated (Phase 7)
-- **Frontend build**: `npm run build` passes
-- **Database schema**: All tables created except Phase 6 mismatch
-- **CLI evaluate**: Works end-to-end, stores run in `model_evaluations` table
-
-### Code Inspection
-- **Phase 4 models**: Poisson, Dixon-Coles (baseline), Elo (baseline) - all implemented
-- **Phase 5 analysis**: Analysis API, match_analyses table, persistence working
-- **Phase 6 models**: Dixon-Coles fitted (`dixon-coles-v1.0.0`), Elo fitted (`elo-v1.0.0`), evaluation persistence (`model_evaluations`)
-- **Phase 7 evaluation**: `phase7-v1` protocol, multi-competition backtest, fitted parameter estimation
-
-### Runtime Verification (2026-11-16 session)
-- **API endpoints**: All documented endpoints functional (`/api/v1/analysis/matches/{id}`, `/api/evaluation/run`, `/api/evaluation/latest`, `/api/evaluation/runs`)
-- **Database records**: 5,322 matches, 4,905 finished results, 417 upcoming fixtures across 13 competitions
-- **Evaluation persistence**: 1 run stored in `model_evaluations` table (ID=1, protocol `phase7-v1`, 970 matches)
-- **Model comparison**: All 5 models (Poisson, Dixon-Coles, Elo, Uniform, Competition Frequency) evaluated on identical 970-match test set
-- **Frontend integration**: Analyze Match panel displays Poisson-based analysis with calibration, provenance, and history
-- **Coverage report**: `python -m app.cli coverage` returns complete provenance metadata
-- **Provider verification**: `python -m app.cli check-provider` verifies football-data.org auth
-
----
-
-## Conclusion
-
-The platform is **technically complete** for its intended Phase 5 scope (offline, synthetic-test-only intelligence foundation with private analysis). However, the implementation **exceeds documented scope** by including Phase 6 model persistence and Phase 7 fitted model evaluation.
-
-**Critical issues**:
-1. **Scope misalignment**: Documentation claims Phase 5 only, but implementation includes Phase 6/7
-2. **Migration test failures**: Expected Phase 6 tables in wrong migration
-3. **Provider statistics unverified**: Critical for Phase 6 statistics capability
-
-**Recommendations**:
-1. **Immediate**: Align documentation with implementation or remove Phase 6/7 features
-2. **Before production**: Obtain public display license (LIM-6) and verify provider statistics
-3. **Before expansion**: Obtain independent QA/ML review of fitted models
-4. **Before scaling**: Implement proper Phase 5/6 boundaries if keeping Phase 6
-
-The platform is ready for **Phase 5 operations** (private, loopback-only) but has **unresolved blockers** for Phase 6 production deployment and scope clarity.
+- `docs/research/phase-7-baseline-audit.md`
+- `docs/research/phase-7-independent-model-review.md`
+- `docs/research/phase-7-dixon-coles-research.md`
+- `docs/research/phase-7-multi-competition-backtest.md`
+- `docs/research/phase-7-model-comparison.md`
+- `docs/research/phase-7-commercial-readiness.md`
+- `docs/research/phase-7-final-report.md`
+- `docs/research/phase-8-betting-proposals-rejected.md`
+- `PROJECT_STATUS.md`, `memory/current-state.md`

@@ -177,6 +177,12 @@ def fit_rho(
     if reference_kickoff.tzinfo is None or reference_kickoff.utcoffset() is None:
         raise ValueError("reference_kickoff must be timezone-aware")
 
+    # Enforce the training boundary here rather than relying on every caller: a future
+    # observation must never influence the fitted value, even by mistake.
+    observations = [
+        item for item in observations if item.kickoff_utc < reference_kickoff
+    ]
+
     if len(observations) < minimum_matches:
         return RhoFit(
             rho=0.0,

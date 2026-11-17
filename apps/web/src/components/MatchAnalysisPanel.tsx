@@ -5,8 +5,10 @@ import { footballApi } from "@/lib/api";
 import type {
   AnalysisClassCalibration,
   AnalysisHistoryItem,
+  AnalysisModelKey,
   AnalysisStatus,
   MatchAnalysis,
+  ModelComparison,
 } from "@/types";
 
 interface MatchAnalysisPanelProps {
@@ -16,6 +18,24 @@ interface MatchAnalysisPanelProps {
 }
 
 const ANALYSABLE_STATUSES = new Set(["scheduled", "timed"]);
+
+const MODEL_OPTIONS: { key: AnalysisModelKey; label: string; description: string }[] = [
+  {
+    key: "poisson",
+    label: "Poisson",
+    description: "Permanent baseline: independent Poisson goals from competition-baselined rates.",
+  },
+  {
+    key: "dixon_coles",
+    label: "Dixon-Coles",
+    description: "Same rates with a fitted low-score dependence term.",
+  },
+  {
+    key: "elo",
+    label: "Elo (Davidson)",
+    description: "Rating replay with a fitted Davidson 1X2 mapping. No score distribution.",
+  },
+];
 
 const STATUS_STYLE: Record<
   AnalysisStatus,
@@ -67,6 +87,10 @@ function label(value: string): string {
     .replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
+function modelLabel(key: AnalysisModelKey): string {
+  return MODEL_OPTIONS.find((option) => option.key === key)?.label ?? key;
+}
+
 function formatTimestamp(value: string | null | undefined): string {
   if (!value) return "—";
   const date = new Date(value);
@@ -81,10 +105,15 @@ export function MatchAnalysisPanel({
 }: MatchAnalysisPanelProps) {
   const [analysis, setAnalysis] = useState<MatchAnalysis | null>(null);
   const [history, setHistory] = useState<AnalysisHistoryItem[]>([]);
+  const [selectedModel, setSelectedModel] =
+    useState<AnalysisModelKey>("poisson");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [mountedAt, setMountedAt] = useState<number | null>(null);
+  const [comparison, setComparison] = useState<ModelComparison | null>(null);
+  const [comparisonPending, setComparisonPending] = useState(false);
+  const [comparisonError, setComparisonError] = useState<string | null>(null);
 
   const loadHistory = useCallback(async () => {
     try {
@@ -113,7 +142,7 @@ export function MatchAnalysisPanel({
     setPending(true);
     setError(null);
     try {
-      const report = await footballApi.analyzeMatch(matchId, force);
+      const report = await footballApi.analyzeMatch(matchId, selectedModel, force);
       setAnalysis(report);
       await loadHistory();
     } catch (failure) {
@@ -127,6 +156,50 @@ export function MatchAnalysisPanel({
     }
   }
 
+  async function runComparison() {
+    setComparisonPending(true);
+    setComparisonError(null);
+    try {
+      const result = await footballApi.compareMatchModels(matchId);
+      setComparison(result);
+      await loadHistory();
+    } catch (failure) {
+      setComparisonError(
+        failure instanceof Error
+          ? failure.message
+          : "The model comparison failed.",
+      );
+    } finally {
+      setComparisonPending(false);
+    }
+  }
+
+  function chooseModel(key: AnalysisModelKey) {
+    setSelectedModel(key);
+    // The visible report belongs to the previous model; never leave it labelled with a
+    // model that did not produce it.
+    setAnalysis(null);
+    setError(null);
+  }
+
+  function chooseComparedReport(key: AnalysisModelKey) {
+    if (!comparison) return;
+    const item = comparison.models.find((model) => model.key === key);
+    if (!item?.analysis_id) return;
+    setSelectedModel(key);
+    setAnalysis(null);
+    void footballApi
+      .getAnalysis(item.analysis_id)
+      .then((report) => setAnalysis(report))
+      .catch((failure) =>
+        setError(
+          failure instanceof Error
+            ? failure.message
+            : "The selected report could not be loaded.",
+        ),
+      );
+  }
+
   return (
     <section className="mt-8 bg-[#0f0f11] rounded-2xl border border-white/10 p-6">
       <div className="flex flex-wrap items-center gap-3 mb-1">
@@ -136,40 +209,67 @@ export function MatchAnalysisPanel({
         {analysis && <StatusPill status={analysis.status} />}
       </div>
       <p className="text-xs text-zinc-500 mb-5">
-        Transparent independent-Poisson estimates from stored results completed before
-        kickoff. Every report states its sample, data window, and out-of-sample error.
+        Transparent statistical estimates from stored results completed before kickoff.
+        Each model is requested explicitly and is never substituted; every report states
+        its sample, data window, and its own recorded limitations.
       </p>
 
-      {!analysis && !pending && !error && (
-        <div className="space-y-4">
-          <p className="text-sm text-zinc-400 leading-relaxed">
-            The model estimates 1X2 probabilities and expected goals from verified
-            historical results. It does not use live match statistics, lineups, or
-            injuries, and it abstains when the verified sample is below the documented
-            threshold.
-          </p>
-          {startable ? (
+      {startable ? (
+        <div className="mb-5 space-y-3">
+          <ModelSelector
+            value={selectedModel}
+            onChange={chooseModel}
+            disabled={pending}
+          />
+          <div className="flex flex-wrap items-center gap-3">
             <button
               type="button"
               onClick={() => void runAnalysis()}
-              className="inline-flex items-center rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+              disabled={pending}
+              className="inline-flex items-center rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Analyze match
+              Analyze with {modelLabel(selectedModel)}
             </button>
-          ) : (
-            <p className="text-sm text-amber-300/90">
-              {kickoffPassed
-                ? "Kickoff has passed. A pre-match report cannot be generated, because it would be evaluated after the fact."
-                : `Analysis is limited to scheduled fixtures. This match is currently “${label(status)}”.`}
-            </p>
-          )}
+            <button
+              type="button"
+              onClick={() => void runComparison()}
+              disabled={comparisonPending}
+              className="inline-flex items-center rounded-lg border border-white/15 px-4 py-2 text-sm text-zinc-200 transition-colors hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {comparisonPending ? "Comparing…" : "Compare all models"}
+            </button>
+          </div>
         </div>
+      ) : (
+        <p className="mb-5 text-sm text-amber-300/90">
+          {kickoffPassed
+            ? "Kickoff has passed. A pre-match report cannot be generated, because it would be evaluated after the fact."
+            : `Analysis is limited to scheduled fixtures. This match is currently “${label(status)}”.`}
+        </p>
+      )}
+
+      {!analysis && !pending && !error && (
+        <p className="mb-5 text-sm leading-relaxed text-zinc-400">
+          Each model estimates 1X2 probabilities from verified historical results. None
+          of them uses live match statistics, lineups, or injuries, and each abstains
+          when the verified sample is below its documented threshold. No model is
+          substituted for another; an abstention is returned as an abstention.
+        </p>
       )}
 
       {pending && (
         <p className="text-sm text-zinc-300" role="status" aria-live="polite">
           Running the analysis from stored results…
         </p>
+      )}
+
+      {comparisonError && (
+        <div
+          className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300"
+          role="alert"
+        >
+          Comparison failed: {comparisonError}
+        </div>
       )}
 
       {error && (
@@ -183,6 +283,10 @@ export function MatchAnalysisPanel({
             Retry
           </button>
         </div>
+      )}
+
+      {comparison && (
+        <ComparisonBlock comparison={comparison} onOpen={chooseComparedReport} />
       )}
 
       {analysis && !pending && (
@@ -274,7 +378,6 @@ function ReadyReport({
   onRegenerate: () => void;
 }) {
   const model = analysis.statistical_model;
-  const quality = analysis.data_quality;
   const history = analysis.historical_context;
   if (!model) return null;
 
@@ -327,10 +430,25 @@ function ReadyReport({
           Probabilities sum to 100%. They are estimates, not guarantees.
         </p>
 
-        <div className="mt-5 grid grid-cols-2 gap-3">
-          <StatCard label={`${home} expected goals`} value={num(model.expected_home_goals)} />
-          <StatCard label={`${away} expected goals`} value={num(model.expected_away_goals)} />
-        </div>
+        {model.expected_home_goals !== null &&
+        model.expected_away_goals !== null ? (
+          <div className="mt-5 grid grid-cols-2 gap-3">
+            <StatCard
+              label={`${home} expected goals`}
+              value={num(model.expected_home_goals)}
+            />
+            <StatCard
+              label={`${away} expected goals`}
+              value={num(model.expected_away_goals)}
+            />
+          </div>
+        ) : (
+          <p className="mt-5 rounded-lg border border-white/10 bg-white/[0.02] px-4 py-3 text-xs leading-relaxed text-zinc-400">
+            This model does not produce expected goals. Elo is a 1X2 rating model, not a
+            score-distribution model, so no goal estimate is shown rather than borrowing
+            the Poisson output.
+          </p>
+        )}
       </div>
 
       <MarketTable model={model} />
@@ -397,43 +515,13 @@ function ReadyReport({
             Model parameters
           </summary>
           <dl className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-sm">
-            <ParameterRow
-              label="Baseline home goals"
-              value={num(model.model_parameters.baseline_avg_home_goals, 3)}
-            />
-            <ParameterRow
-              label="Baseline away goals"
-              value={num(model.model_parameters.baseline_avg_away_goals, 3)}
-            />
-            <ParameterRow
-              label="Baseline source"
-              value={label(model.model_parameters.baseline_source)}
-            />
-            <ParameterRow
-              label="Home attack / defence"
-              value={`${num(model.model_parameters.home_attack_strength, 3)} / ${num(
-                model.model_parameters.home_defence_strength,
-                3,
-              )}`}
-            />
-            <ParameterRow
-              label="Away attack / defence"
-              value={`${num(model.model_parameters.away_attack_strength, 3)} / ${num(
-                model.model_parameters.away_defence_strength,
-                3,
-              )}`}
-            />
-            <ParameterRow
-              label="Recent-form weight (home / away)"
-              value={`${num(model.model_parameters.home_recent_weight, 2)} / ${num(
-                model.model_parameters.away_recent_weight,
-                2,
-              )}`}
-            />
-            <ParameterRow
-              label="Expected-goals bounds"
-              value={model.model_parameters.expected_goals_bounds.join(" – ")}
-            />
+            {Object.entries(model.model_parameters).map(([key, value]) => (
+              <ParameterRow
+                key={key}
+                label={label(key)}
+                value={formatParameter(value)}
+              />
+            ))}
           </dl>
         </details>
       )}
@@ -499,6 +587,19 @@ function MarketTable({
 }: {
   model: NonNullable<MatchAnalysis["statistical_model"]>;
 }) {
+  const hasMarkets =
+    model.btts_probability !== null ||
+    model.over_2_5_probability !== null ||
+    model.scoreline_probabilities.length > 0;
+  if (!hasMarkets) {
+    return (
+      <p className="rounded-lg border border-white/10 bg-white/[0.02] px-4 py-3 text-xs leading-relaxed text-zinc-400">
+        This model does not produce BTTS, over/under, or scoreline probabilities. No
+        secondary markets are shown.
+      </p>
+    );
+  }
+
   const rows = [
     {
       name: "Both teams to score",
@@ -922,6 +1023,148 @@ function HistoryTable({
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+function formatParameter(value: unknown): string {
+  if (value === null || value === undefined) return "—";
+  if (typeof value === "number") {
+    return Number.isInteger(value) ? String(value) : value.toFixed(4);
+  }
+  if (typeof value === "string") return label(value);
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (Array.isArray(value)) return value.map((item) => String(item)).join(" – ");
+  if (typeof value === "object") {
+    return Object.entries(value as Record<string, unknown>)
+      .map(([key, item]) => `${label(key)}: ${formatParameter(item)}`)
+      .join(" · ");
+  }
+  return String(value);
+}
+
+function ModelSelector({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: AnalysisModelKey;
+  onChange: (key: AnalysisModelKey) => void;
+  disabled: boolean;
+}) {
+  const selected = MODEL_OPTIONS.find((option) => option.key === value);
+  return (
+    <fieldset disabled={disabled} className="space-y-2">
+      <legend className="text-xs font-bold uppercase tracking-wider text-zinc-500">
+        Model
+      </legend>
+      <div className="flex flex-wrap gap-2">
+        {MODEL_OPTIONS.map((option) => {
+          const active = option.key === value;
+          return (
+            <button
+              key={option.key}
+              type="button"
+              aria-pressed={active}
+              onClick={() => onChange(option.key)}
+              className={`rounded-lg border px-3 py-1.5 text-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 ${
+                active
+                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+                  : "border-white/10 bg-white/[0.02] text-zinc-300 hover:bg-white/5"
+              }`}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+      {selected && (
+        <p className="text-xs text-zinc-500 leading-relaxed">{selected.description}</p>
+      )}
+    </fieldset>
+  );
+}
+
+function ComparisonBlock({
+  comparison,
+  onOpen,
+}: {
+  comparison: ModelComparison;
+  onOpen: (key: AnalysisModelKey) => void;
+}) {
+  return (
+    <div className="mb-8 rounded-xl border border-white/10 bg-white/[0.02] p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+        <h4 className="text-sm font-bold text-white">Model comparison</h4>
+        <span className="font-mono text-xs text-zinc-500">
+          dataset {comparison.dataset_digest?.slice(0, 16) ?? "not recorded"}…
+        </span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[640px] text-sm">
+          <thead>
+            <tr className="border-b border-white/10 text-left text-xs uppercase tracking-wide text-zinc-500">
+              <th className="py-2 pr-3 font-medium">Model</th>
+              <th className="py-2 px-2 font-medium">Status</th>
+              <th className="py-2 px-2 text-right font-medium">Home</th>
+              <th className="py-2 px-2 text-right font-medium">Draw</th>
+              <th className="py-2 px-2 text-right font-medium">Away</th>
+              <th className="py-2 px-2 text-right font-medium">xG home / away</th>
+              <th className="py-2 pl-2 font-medium">Report</th>
+            </tr>
+          </thead>
+          <tbody>
+            {comparison.models.map((item) => (
+              <tr key={item.key} className="border-b border-white/5">
+                <td className="py-2.5 pr-3">
+                  <div className="font-medium text-zinc-100">{modelLabel(item.key)}</div>
+                  <div className="text-xs text-zinc-500">{item.model_version}</div>
+                </td>
+                <td className="py-2.5 px-2">
+                  <StatusPill status={item.status} />
+                  {item.reason && (
+                    <span className="mt-1 block max-w-[220px] text-xs text-zinc-500">
+                      {item.reason}
+                    </span>
+                  )}
+                </td>
+                <td className="py-2.5 px-2 text-right font-mono text-zinc-200">
+                  {pct(item.home_win_probability)}
+                </td>
+                <td className="py-2.5 px-2 text-right font-mono text-zinc-200">
+                  {pct(item.draw_probability)}
+                </td>
+                <td className="py-2.5 px-2 text-right font-mono text-zinc-200">
+                  {pct(item.away_win_probability)}
+                </td>
+                <td className="py-2.5 px-2 text-right font-mono text-zinc-400">
+                  {item.expected_home_goals === null && item.expected_away_goals === null
+                    ? "not produced"
+                    : `${num(item.expected_home_goals)} / ${num(item.expected_away_goals)}`}
+                </td>
+                <td className="py-2.5 pl-2">
+                  {item.analysis_id ? (
+                    <button
+                      type="button"
+                      onClick={() => onOpen(item.key)}
+                      className="text-xs text-emerald-400 underline-offset-2 hover:underline"
+                    >
+                      Open #{item.analysis_id}
+                    </button>
+                  ) : (
+                    <span className="text-xs text-zinc-600">—</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-zinc-500">
+        {comparison.notes.map((note) => (
+          <li key={note}>{note}</li>
+        ))}
+      </ul>
     </div>
   );
 }

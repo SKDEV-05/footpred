@@ -1,10 +1,14 @@
 import type {
   AnalysisHistoryItem,
+  AnalysisModelKey,
   CompetitionSummary,
   Country,
+  EvaluationRun,
+  EvaluationRunSummary,
   Fixture,
   FixtureDetail,
   MatchAnalysis,
+  ModelComparison,
   Page,
   StatisticsResponse,
   SyncStatus,
@@ -13,6 +17,17 @@ import type {
 } from "@/types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api/v1";
+
+/** An API failure that keeps the HTTP status so callers can distinguish "not found". */
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
 
 function buildUrl(
   endpoint: string,
@@ -43,7 +58,7 @@ export async function apiFetch<T>(
   });
 
   if (!response.ok) {
-    throw new Error(await errorMessage(response));
+    throw new ApiError(await errorMessage(response), response.status);
   }
 
   return response.json();
@@ -59,7 +74,7 @@ export async function apiPost<T>(
   });
 
   if (!response.ok) {
-    throw new Error(await errorMessage(response));
+    throw new ApiError(await errorMessage(response), response.status);
   }
 
   return response.json();
@@ -78,13 +93,20 @@ export const footballApi = {
   searchTeams: (query: string) =>
     apiFetch<Page<TeamSummary>>("/teams", { q: query, page_size: 20 }),
   getSyncStatus: () => apiFetch<SyncStatus>("/sync/status"),
-  analyzeMatch: (id: number, force = false) =>
-    apiPost<MatchAnalysis>(
-      `/analysis/matches/${id}`,
-      force ? { force: "true" } : {},
-    ),
+  analyzeMatch: (id: number, model: AnalysisModelKey = "poisson", force = false) =>
+    apiPost<MatchAnalysis>(`/analysis/matches/${id}`, {
+      model,
+      ...(force ? { force: "true" } : {}),
+    }),
+  compareMatchModels: (id: number) =>
+    apiPost<ModelComparison>(`/analysis/matches/${id}/comparison`),
   getAnalysis: (analysisId: number) =>
     apiFetch<MatchAnalysis>(`/analysis/${analysisId}`),
   getMatchAnalysisHistory: (id: number) =>
     apiFetch<AnalysisHistoryItem[]>(`/analysis/matches/${id}/history`),
+  getLatestEvaluation: () => apiFetch<EvaluationRun>("/evaluation/latest"),
+  listEvaluations: () =>
+    apiFetch<EvaluationRunSummary[]>("/evaluation/runs", { limit: 20 }),
+  getEvaluation: (id: number) => apiFetch<EvaluationRun>(`/evaluation/${id}`),
+  runEvaluation: () => apiPost<EvaluationRun>("/evaluation/run"),
 };

@@ -350,3 +350,171 @@ def test_loader_honours_as_of_observation_boundary(client, database):
             load_point_in_time_dataset(
                 session, fixture=fixture, as_of=KICKOFF_FUTURE
             )
+
+
+# ------------------------------------------------------- Phase 7 model selection
+
+
+def test_model_query_selects_exactly_the_requested_model(client, database):
+    ids = _seed_matches(database, [*_history_specs(), _upcoming_spec()])
+    match_id = ids[-1]
+
+    expected = {
+        "poisson": ("poisson_baseline", "poisson-v1.1.0"),
+        "dixon_coles": ("dixon_coles_baseline", "dixon-coles-v1.0.0"),
+        "elo": ("elo_baseline", "elo-v1.0.0"),
+    }
+    for key, (model_id, model_version) in expected.items():
+        response = client.post(
+            f"/api/v1/analysis/matches/{match_id}", params={"model": key}
+        )
+        assert response.status_code == 200, response.text
+        report = response.json()
+        assert report["status"] == "READY"
+        model = report["statistical_model"]
+        assert model["model_id"] == model_id
+        assert model["model_version"] == model_version
+
+        total = (
+            model["home_win_probability"]
+            + model["draw_probability"]
+            + model["away_win_probability"]
+        )
+        assert abs(total - 1.0) < 1e-6
+
+
+def test_default_model_is_poisson(client, database):
+    ids = _seed_matches(database, [*_history_specs(), _upcoming_spec()])
+    match_id = ids[-1]
+    default = client.post(f"/api/v1/analysis/matches/{match_id}").json()
+    explicit = client.post(
+        f"/api/v1/analysis/matches/{match_id}", params={"model": "poisson"}
+    ).json()
+    assert default["statistical_model"]["model_id"] == "poisson_baseline"
+    assert default["id"] == explicit["id"]
+
+
+def test_unknown_model_is_rejected_and_nothing_is_persisted(client, database):
+    from sqlalchemy import func, select
+
+    from app.models.analysis import MatchAnalysis
+
+    ids = _seed_matches(database, [*_history_specs(), _upcoming_spec()])
+    response = client.post(
+        f"/api/v1/analysis/matches/{ids[-1]}",
+        params={"model": "gradient_boosting"},
+    )
+    assert response.status_code == 422
+    error = response.json()["error"]
+    assert error["code"] == "unknown_model"
+    assert "dixon_coles" in error["message"]
+
+    with session_scope() as session:
+        count = session.execute(
+            select(func.count()).select_from(MatchAnalysis)
+        ).scalar_one()
+    assert count == 0
+
+
+def test_elo_is_not_silently_substituted_with_poisson(client, database):
+    ids = _seed_matches(database, [*_history_specs(), _upcoming_spec()])
+    report = client.post(
+        f"/api/v1/analysis/matches/{ids[-1]}", params={"model": "elo"}
+    ).json()
+
+    model = report["statistical_model"]
+    assert model["model_id"] == "elo_baseline"
+    # Elo produces no score distribution, so these must be absent rather than copied
+    # from the Poisson default.
+    assert model["expected_home_goals"] is None
+    assert model["expected_away_goals"] is None
+    assert model["scoreline_probabilities"] == []
+    assert model["btts_probability"] is None
+    # The Poisson rolling-origin block must not be attached to an Elo report.
+    assert report["evaluation"] is None
+    assert model["model_parameters"]["home_rating"] > 0
+
+
+def test_repeated_model_request_is_idempotent(client, database):
+    ids = _seed_matches(database, [*_history_specs(), _upcoming_spec()])
+    match_id = ids[-1]
+    first = client.post(
+        f"/api/v1/analysis/matches/{match_id}", params={"model": "dixon_coles"}
+    ).json()
+    second = client.post(
+        f"/api/v1/analysis/matches/{match_id}", params={"model": "dixon_coles"}
+    ).json()
+    assert second["id"] == first["id"]
+
+    fetched = client.get(f"/api/v1/analysis/{first['id']}").json()
+    assert fetched["statistical_model"]["model_id"] == "dixon_coles_baseline"
+
+
+def test_comparison_runs_every_model_on_one_dataset(client, database):
+    ids = _seed_matches(database, [*_history_specs(), _upcoming_spec()])
+    match_id = ids[-1]
+
+    response = client.post(f"/api/v1/analysis/matches/{match_id}/comparison")
+    assert response.status_code == 200, response.text
+    comparison = response.json()
+
+    assert comparison["match_id"] == match_id
+    assert len(comparison["dataset_digest"]) == 64
+    assert [item["key"] for item in comparison["models"]] == [
+        "poisson",
+        "dixon_coles",
+        "elo",
+    ]
+    digests = {
+        item["key"]: item for item in comparison["models"]
+    }
+    for item in comparison["models"]:
+        assert item["status"] == "READY"
+        assert item["analysis_id"] is not None
+        total = (
+            item["home_win_probability"]
+            + item["draw_probability"]
+            + item["away_win_probability"]
+        )
+        assert abs(total - 1.0) < 1e-6
+
+    # Every model's persisted report belongs to the same point-in-time dataset.
+    stored_digests = set()
+    for item in digests.values():
+        stored = client.get(f"/api/v1/analysis/{item['analysis_id']}").json()
+        stored_digests.add(stored["data_quality"]["dataset_digest"])
+        assert stored["statistical_model"]["model_version"] == item["model_version"]
+    assert stored_digests == {comparison["dataset_digest"]}
+
+    # Repeating the comparison reuses the same persisted reports.
+    again = client.post(f"/api/v1/analysis/matches/{match_id}/comparison").json()
+    assert [item["analysis_id"] for item in again["models"]] == [
+        item["analysis_id"] for item in comparison["models"]
+    ]
+
+
+def test_comparison_abstains_for_an_unanalysable_match(client, database):
+    finished = {
+        "external_id": "comparison_finished",
+        "status": "FINISHED",
+        "kickoff": datetime(2026, 10, 20, 15, 0, tzinfo=timezone.utc),
+        "score": make_score(home=1, away=1),
+    }
+    ids = _seed_matches(database, [_upcoming_spec(), finished])
+
+    comparison = client.post(
+        f"/api/v1/analysis/matches/{ids[-1]}/comparison"
+    ).json()
+    assert {item["status"] for item in comparison["models"]} == {"DATA_UNAVAILABLE"}
+    assert all(item["analysis_id"] is None for item in comparison["models"])
+
+
+def test_comparison_returns_404_for_an_unknown_match(client):
+    response = client.post("/api/v1/analysis/matches/999999/comparison")
+    assert response.status_code == 404
+
+
+def test_missing_analysis_returns_404_not_500(client):
+    response = client.get("/api/v1/analysis/999999")
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "not_found"

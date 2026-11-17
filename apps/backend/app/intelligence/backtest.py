@@ -403,6 +403,27 @@ def paired_comparison(
     }
 
 
+def result_is_available(
+    result_kickoff: datetime,
+    target_kickoff: datetime,
+    *,
+    horizon: timedelta = MATCH_HORIZON,
+) -> bool:
+    """Whether a result may inform a prediction for a later kickoff.
+
+    A match only becomes usable after ``kickoff + horizon``. The horizon is a documented
+    retrospective bound: the stored corpus was backfilled and cannot reconstruct the
+    provider's original publication time. Simultaneous kickoffs are never usable for one
+    another.
+    """
+
+    if result_kickoff.tzinfo is None or target_kickoff.tzinfo is None:
+        raise ValueError("kickoff times must be timezone-aware")
+    if horizon < timedelta(0):
+        raise ValueError("horizon must not be negative")
+    return result_kickoff + horizon <= target_kickoff
+
+
 def _group_by_kickoff(
     matches: Sequence[HistoricalMatch],
 ) -> Iterable[list[HistoricalMatch]]:
@@ -513,7 +534,7 @@ def run_multi_competition_backtest(
         # time so that simultaneous results never influence each other.
         while cursor < len(matches):
             head_kickoff = matches[cursor].kickoff_utc
-            if head_kickoff + MATCH_HORIZON > kickoff:
+            if not result_is_available(head_kickoff, kickoff):
                 break
             batch: list[HistoricalMatch] = []
             while (

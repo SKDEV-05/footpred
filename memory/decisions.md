@@ -481,3 +481,93 @@ guarantee, and not evidence of general accuracy.
 **Reference:** `docs/decisions/ADR-0010-verified-real-dataset-contract.md`,
 `docs/research/2026-11-16-historical-coverage-report.md`,
 `docs/architecture/api-design.md`.
+
+### DEC-028 — Phase 7 explicit model selection; Poisson stays the permanent baseline
+
+**Date:** 2026-11-17
+**Status:** Implemented and tested; self-reviewed; independent review pending
+**Decision:**
+1. `poisson-v1.1.0` remains the default and the permanent baseline. No experimental model is
+   promoted, and no model is substituted for another at request time.
+2. The analysis endpoint accepts `?model={poisson|dixon_coles|elo}`. An unknown key returns
+   HTTP 422 `unknown_model` and persists nothing. There is no fallback branch.
+3. `app/intelligence/model_selection.py` is the only public-key→implementation map. Poisson
+   continues to use `run_statistical_prediction`; DC and Elo go through
+   `compute_model_prediction`.
+4. `POST /api/v1/analysis/matches/{id}/comparison` runs every model on the same point-in-time
+   dataset (same `dataset_digest`), persists one report per model, and returns the model id
+   and version with every number. It is POST because it writes reports.
+5. `model_parameters` is a permissive mapping (`dict[str, Any] | None`) so Elo can report
+   ratings and a Davidson fit without being forced into Poisson-shaped fields.
+6. The embedded 50-match Poisson evaluation block is attached to Poisson reports only; DC and
+   Elo return `evaluation: null` rather than borrowing a Poisson measurement.
+**Reason:** Before Phase 7 the API answered every request with Poisson, and DC/Elo were
+reachable only from the evaluation engine. That created two risks: a client could believe it
+was comparing models while reading Poisson three times, and a comparison that defaulted on
+failure would manufacture agreement.
+**Evidence:** 56 new tests (321 passing); match 410 comparison produces three reports on one
+digest; unknown-model and unknown-match paths are integration-tested.
+**Consequence:** Model identity is now explicit end to end. No accuracy claim follows from
+model outputs differing; only the stored evaluation supports comparison.
+**Reference:** `docs/research/phase-7-model-comparison.md`,
+`apps/backend/app/intelligence/model_selection.py`.
+
+### DEC-029 — Phase 7 evaluation protocol, persistence and dashboard
+
+**Date:** 2026-11-17
+**Status:** Implemented, reproduced and persisted; retrospective
+**Decision:**
+1. Keep protocol `phase7-v1` and evaluation `evaluation-v1.2.0`: one chronological pass,
+   identical match set for every model, results eligible only when
+   `kickoff + 3 h <= target kickoff`, simultaneous kickoffs isolated, per-competition
+   parameters fitted before the first target and frozen for the window.
+2. `fit_rho` enforces `kickoff_utc < reference_kickoff` internally as a second leakage guard,
+   rather than relying on the caller alone.
+3. The result-eligibility rule lives in `result_is_available(...)` so the boundary is testable
+   (exactly +3 h available, −1 s not; naive timestamps and negative horizons rejected).
+4. Evaluation runs remain append-only and idempotent on
+   `(protocol_version, evaluation_version, dataset_digest)`. A changed corpus, including a
+   changed `resolved_at`, produces a new row; old rows are never overwritten.
+5. Nested per-competition/per-season model blocks accept optional identity
+   (`NestedModelMetricsOut`), while the top-level model list stays strict. This fixes a real
+   500 caused by missing nested `model_id`.
+6. The `/evaluation` dashboard renders persisted runs through `GET /api/v1/evaluation/...`
+   only. It never recomputes a metric in the browser.
+**Reason:** Evaluation is only legitimate if every model is scored on the same matches from the
+same information cutoff, and only honest if the UI cannot manufacture a number.
+**Evidence:** run 2 digest `48bc547bf6a88850…`, 970 matches, 11 competitions; recomputation
+matches in every field and repeats reuse the row. See
+`docs/research/phase-7-multi-competition-backtest.md`.
+**Consequence:** The measured result is: Poisson conclusively beats both trivial baselines;
+Dixon-Coles is indistinguishable from Poisson (paired Brier +0.0002, CI spanning zero); Elo is
+directionally worse but not proven different. No default changes.
+**Reference:** `docs/research/phase-7-multi-competition-backtest.md`,
+`apps/backend/app/intelligence/backtest.py`.
+
+### DEC-030 — Phase 8 betting proposals rejected; orphan modules deleted
+
+**Date:** 2026-11-17
+**Status:** Rejected / frozen. No Phase 8 implementation is approved.
+**Decision:**
+1. The six `docs/research/phase-8-*.md` documents that described odds, expected value, paper
+   betting and best bets as implemented were false. They were deleted and replaced by
+   `docs/research/phase-8-betting-proposals-rejected.md`, which preserves the ideas only as
+   unapproved proposals. The originals remain in git history at `4aed17d`.
+2. `app/intelligence/validation.py` and `app/intelligence/calibration.py` were deleted. Both
+   were untracked, imported by nothing (app, API, CLI or tests), untested, and duplicated the
+   tested `backtest.py` under Phase 8 labels.
+3. Deleting them is not a rejection of validation or calibration as topics. The parts that
+   matter already exist in `backtest.py`: chronological evaluation, eligibility horizon,
+   identical match set, fixed-seed bootstrap, reliability bins and ECE/MCE, persistence.
+4. Calibration as a **correction** (temperature scaling, isotonic) and a formal final-holdout
+   protocol remain unimplemented proposals. Either would change published probabilities and
+   needs its own ADR and evidence.
+**Reason:** `AGENTS.md` defines the product as not a tipster service and requires an ADR and
+developer approval before betting-adjacent features. No odds source is licensed or verified,
+so an expected-value number would be fabricated. Documentation that claims unimplemented
+features are complete is itself a defect.
+**Consequence:** The product boundary is unchanged: no odds, no value betting, no paper
+betting, no best bets. Any future proposal needs an explicit developer decision, an ADR, a
+licensed odds source, a settlement policy and independent review.
+**Reference:** `docs/research/phase-8-betting-proposals-rejected.md`,
+`docs/research/phase-7-commercial-readiness.md`.

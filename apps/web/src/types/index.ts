@@ -174,18 +174,12 @@ export interface AnalysisHistoricalContext {
   baseline_sample_sufficient: boolean;
 }
 
-export interface AnalysisModelParameters {
-  baseline_avg_home_goals: number;
-  baseline_avg_away_goals: number;
-  baseline_source: string;
-  home_attack_strength: number;
-  home_defence_strength: number;
-  away_attack_strength: number;
-  away_defence_strength: number;
-  home_recent_weight: number;
-  away_recent_weight: number;
-  expected_goals_bounds: number[];
-}
+/**
+ * Model parameters differ by model: Poisson reports rates and strengths, Elo reports
+ * ratings and its fitted mapping. The mapping is intentionally open so neither model is
+ * forced to invent fields it does not have.
+ */
+export type AnalysisModelParameters = Record<string, unknown>;
 
 export interface AnalysisScoreline {
   home_goals: number;
@@ -211,6 +205,32 @@ export interface AnalysisStatisticalModel {
   under_3_5_probability: number | null;
   scoreline_probabilities: AnalysisScoreline[];
   model_parameters: AnalysisModelParameters | null;
+}
+
+export type AnalysisModelKey = "poisson" | "dixon_coles" | "elo";
+
+export interface ModelComparisonItem {
+  key: AnalysisModelKey;
+  model_id: string;
+  model_version: string;
+  status: AnalysisStatus;
+  home_win_probability: number | null;
+  draw_probability: number | null;
+  away_win_probability: number | null;
+  expected_home_goals: number | null;
+  expected_away_goals: number | null;
+  reason: string | null;
+  analysis_id: number | null;
+  limitations: string[];
+}
+
+export interface ModelComparison {
+  match_id: number;
+  analysis_as_of: string;
+  dataset_id: string | null;
+  dataset_digest: string | null;
+  models: ModelComparisonItem[];
+  notes: string[];
 }
 
 export interface AnalysisCalibrationBin {
@@ -313,4 +333,171 @@ export interface AnalysisHistoryItem {
   home_win_probability: number | null;
   draw_probability: number | null;
   away_win_probability: number | null;
+}
+
+
+// --------------------------------------------------------------- evaluation API
+
+export interface EvaluationSettings {
+  min_prior_matches: number;
+  max_test_per_competition: number;
+  result_horizon_hours: number;
+  bootstrap_resamples: number;
+  bootstrap_seed: number;
+  calibration_bins: number;
+  timeline_bucket_size: number;
+}
+
+export interface EvaluationDataset {
+  dataset_id: string | null;
+  dataset_digest: string | null;
+  classification: string | null;
+  matches: number | null;
+  competitions: number | null;
+  provider_code: string | null;
+  retrieval_from: string | null;
+  observed_to: string | null;
+}
+
+export interface EvaluationBootstrap {
+  resamples: number;
+  seed: number;
+  brier_ci: Record<string, number> | null;
+  log_loss_ci: Record<string, number> | null;
+}
+
+export interface EvaluationOutcomeMetrics {
+  sample_size: number;
+  observed_rate: number | null;
+  mean_probability: number | null;
+  calibration_gap: number | null;
+  brier_score: number | null;
+  log_loss: number | null;
+}
+
+export interface EvaluationModelMetrics {
+  key: string;
+  model_id: string | null;
+  model_version: string | null;
+  label: string | null;
+  role: string | null;
+  evaluated: boolean;
+  reason: string | null;
+  sample_size: number;
+  brier_score: number | null;
+  log_loss: number | null;
+  brier_skill_score_vs_uniform: number | null;
+  expected_calibration_error: number | null;
+  maximum_calibration_error: number | null;
+  calibration: AnalysisClassCalibration[];
+  mean_probabilities: Record<string, number>;
+  observed_frequencies: Record<string, number>;
+  per_outcome: Record<string, EvaluationOutcomeMetrics>;
+  top_pick_accuracy: number | null;
+  bootstrap: EvaluationBootstrap | null;
+}
+
+export interface EvaluationPairedComparison {
+  reference: string;
+  candidate: string;
+  evaluated: boolean;
+  reason: string | null;
+  sample_size: number | null;
+  brier_difference: {
+    mean: number | null;
+    lower: number | null;
+    upper: number | null;
+    interpretation: string | null;
+  } | null;
+  log_loss_difference: {
+    mean: number | null;
+    lower: number | null;
+    upper: number | null;
+    interpretation: string | null;
+  } | null;
+}
+
+export interface EvaluationCompetition {
+  competition_id: string;
+  sample_size: number;
+  status: string;
+  diagnostics: {
+    evaluated: number;
+    skipped_model_abstention: number;
+    skipped_history: number;
+  };
+  fitted_parameters: {
+    rho: number | null;
+    rho_status: string | null;
+    rho_matches: number | null;
+    elo_home_advantage: number | null;
+    elo_draw_nu: number | null;
+    elo_status: string | null;
+    training_matches: number | null;
+  } | null;
+  models: Record<string, EvaluationModelMetrics>;
+}
+
+export interface EvaluationSeason {
+  competition_id: string;
+  season_id: string;
+  sample_size: number;
+  models: Record<string, EvaluationModelMetrics>;
+}
+
+export interface EvaluationTimelineBucket {
+  from: string;
+  to: string;
+  sample_size: number;
+  models: Record<string, { brier_score: number | null; sample_size: number } | null>;
+}
+
+export interface EvaluationReportBody {
+  evaluated: boolean;
+  reason: string | null;
+  protocol_version: string;
+  evaluation_version: string;
+  settings: EvaluationSettings | null;
+  dataset: EvaluationDataset | null;
+  window: { from: string; to: string } | null;
+  sample_size: number;
+  models: EvaluationModelMetrics[];
+  comparisons: EvaluationPairedComparison[];
+  competitions: EvaluationCompetition[];
+  seasons: EvaluationSeason[];
+  timeline: EvaluationTimelineBucket[];
+  insufficient_competitions: {
+    competition_id: string;
+    status: string;
+    sample_size: number;
+    required: number;
+  }[];
+  notes: string[];
+}
+
+export interface EvaluationRun {
+  id: number;
+  protocol_version: string;
+  evaluation_version: string;
+  dataset_id: string | null;
+  dataset_digest: string;
+  provider_code: string | null;
+  sample_size: number;
+  window_from: string | null;
+  window_to: string | null;
+  generated_at: string;
+  report: EvaluationReportBody;
+}
+
+export interface EvaluationRunSummary {
+  id: number;
+  protocol_version: string;
+  evaluation_version: string;
+  dataset_id: string | null;
+  dataset_digest: string;
+  sample_size: number;
+  window_from: string | null;
+  window_to: string | null;
+  generated_at: string;
+  model_keys: string[];
 }

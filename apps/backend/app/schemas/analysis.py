@@ -101,7 +101,10 @@ class StatisticalModelOut(BaseModel):
     over_3_5_probability: float | None
     under_3_5_probability: float | None
     scoreline_probabilities: list[ScorelineProbabilityOut] = Field(default_factory=list)
-    model_parameters: ModelParametersOut | None = None
+    # Poisson carries the full parameter set; Elo carries ratings and fitted mapping
+    # parameters. A permissive mapping keeps the contract honest for both without
+    # inventing fields a model does not have.
+    model_parameters: dict[str, Any] | None = None
 
 
 class DataQualityOut(BaseModel):
@@ -186,6 +189,30 @@ class MatchAnalysisOut(BaseModel):
     explanation: ExplanationOut | None = None
     evaluation: EvaluationOut | None = None
     error_message: str | None = None
+
+
+class ModelComparisonItemOut(BaseModel):
+    key: str
+    model_id: str
+    model_version: str
+    status: str
+    home_win_probability: float | None
+    draw_probability: float | None
+    away_win_probability: float | None
+    expected_home_goals: float | None
+    expected_away_goals: float | None
+    reason: str | None
+    analysis_id: int | None
+    limitations: list[str] = Field(default_factory=list)
+
+
+class ModelComparisonOut(BaseModel):
+    match_id: int
+    analysis_as_of: UtcDatetime
+    dataset_id: str | None
+    dataset_digest: str | None
+    models: list[ModelComparisonItemOut]
+    notes: list[str] = Field(default_factory=list)
 
 
 class AnalysisHistoryItem(BaseModel):
